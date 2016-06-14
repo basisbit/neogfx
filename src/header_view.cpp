@@ -31,7 +31,7 @@ namespace neogfx
 	{
 	public:
 		updater(header_view& aParent) :
-			neolib::callback_timer(app::instance(), [this](neolib::callback_timer&)
+			neolib::callback_timer(app::instance(), [this, &aParent](neolib::callback_timer&)
 			{
 				neolib::destroyable::destroyed_flag destroyed(*this);
 				iParent.layout().set_spacing(iParent.separator_width());
@@ -39,37 +39,47 @@ namespace neogfx
 				while (iParent.layout().item_count() > iParent.model().columns() + 1)
 					iParent.layout().remove_item(iParent.layout().item_count() - 1);
 				while (iParent.layout().item_count() < iParent.model().columns() + 1)
-					iParent.layout().add_widget(std::make_shared<push_button>("", push_button::ButtonStyleItemViewHeader));
+				{
+					iParent.layout().add_item(std::make_shared<push_button>("", push_button::ButtonStyleItemViewHeader));
+				}
 				for (std::size_t i = 0; i < iParent.layout().item_count(); ++i)
 				{
+					push_button& button = iParent.layout().get_widget<push_button>(i);
 					if (i < iParent.model().columns())
 					{
-						push_button& button = iParent.layout().get_widget<push_button>(i);
 						button.text().set_text(iParent.model().column_heading_text(i));
-						iParent.layout().get_widget<push_button>(i).set_minimum_size(optional_size{});
+						button.set_size_policy(iParent.iType == header_view::HorizontalHeader ?
+							neogfx::size_policy{neogfx::size_policy::Fixed, neogfx::size_policy::Minimum} :
+							neogfx::size_policy{neogfx::size_policy::Minimum, neogfx::size_policy::Fixed});
+						button.set_minimum_size(optional_size{});
 						button.enable(true);
-						button.pressed.subscribe([&, i]()
+						button.clicked.subscribe([&aParent, i]()
 						{
-							iParent.surface().save_mouse_cursor();
-							iParent.surface().set_mouse_cursor(mouse_system_cursor::Wait);
-							iParent.model().sort_by(i);
-							iParent.surface().restore_mouse_cursor();
-						}, this);
+							aParent.surface().save_mouse_cursor();
+							aParent.surface().set_mouse_cursor(mouse_system_cursor::Wait);
+							aParent.model().sort_by(i);
+							aParent.surface().restore_mouse_cursor();
+						}, &aParent);
 					}
 					else
 					{
-						iParent.layout().get_widget<push_button>(i).set_minimum_size(size{});
-						iParent.layout().get_widget(i).enable(false);
+						button.text().set_text(std::string());
+						button.set_size_policy(iParent.iType == header_view::HorizontalHeader ? 
+							neogfx::size_policy{neogfx::size_policy::Expanding, neogfx::size_policy::Minimum} :
+							neogfx::size_policy{neogfx::size_policy::Minimum, neogfx::size_policy::Expanding});
+						button.set_minimum_size(size{});
+						button.enable(false);
 					}
 				}
 				uint64_t since = app::instance().program_elapsed_ms();
+				app::event_processing_context epc(app::instance(), "neogfx::header_view::updater");
 				for (uint32_t c = 0; c < 1000 && iRow < iParent.model().rows(); ++c, ++iRow)
 				{
 					iParent.update_from_row(iRow, false);
 					if (c % 25 == 0 && app::instance().program_elapsed_ms() - since > 20)
 					{
 						iParent.iOwner.header_view_updated(iParent);
-						app::instance().process_events();
+						app::instance().process_events(epc);
 						if (destroyed || iParent.surface().destroyed())
 							return;
 						since = app::instance().program_elapsed_ms();
@@ -86,11 +96,6 @@ namespace neogfx
 		}
 		~updater()
 		{
-			for (std::size_t i = 0; i < iParent.layout().item_count(); ++i)
-			{
-				push_button& button = iParent.layout().get_widget<push_button>(i);
-				button.pressed.unsubscribe(this);
-			}
 			cancel();
 		}
 	private:
@@ -224,7 +229,7 @@ namespace neogfx
 		}
 	}
 
-	void header_view::column_info_changed(const i_item_model& aModel, item_model_index::value_type aColumnIndex)
+	void header_view::column_info_changed(const i_item_model&, item_model_index::value_type)
 	{
 		if (iBatchUpdatesInProgress)
 			return;
@@ -233,7 +238,7 @@ namespace neogfx
 		iUpdater.reset(new updater(*this));
 	}
 
-	void header_view::item_added(const i_item_model& aModel, const item_model_index& aItemIndex)
+	void header_view::item_added(const i_item_model&, const item_model_index&)
 	{
 		if (iBatchUpdatesInProgress)
 			return;
@@ -242,7 +247,7 @@ namespace neogfx
 		iUpdater.reset(new updater(*this));
 	}
 
-	void header_view::item_changed(const i_item_model& aModel, const item_model_index& aItemIndex)
+	void header_view::item_changed(const i_item_model&, const item_model_index&)
 	{
 		if (iBatchUpdatesInProgress)
 			return;
@@ -251,7 +256,7 @@ namespace neogfx
 		iUpdater.reset(new updater(*this));
 	}
 
-	void header_view::item_removed(const i_item_model& aModel, const item_model_index& aItemIndex)
+	void header_view::item_removed(const i_item_model&, const item_model_index&)
 	{
 		if (iBatchUpdatesInProgress)
 			return;
@@ -260,13 +265,13 @@ namespace neogfx
 		iUpdater.reset(new updater(*this));
 	}
 
-	void header_view::items_sorted(const i_item_model& aModel)
+	void header_view::items_sorted(const i_item_model&)
 	{
 		iUpdater.reset();
 		iUpdater.reset(new updater(*this));
 	}
 
-	void header_view::model_destroyed(const i_item_model& aModel)
+	void header_view::model_destroyed(const i_item_model&)
 	{
 		iModel.reset();
 	}
@@ -297,9 +302,9 @@ namespace neogfx
 
 	dimension header_view::section_width(uint32_t aSectionIndex) const
 	{
-		if (aSectionIndex >= iSectionWidths.size())
-			_asm int 3;
-		return units_converter(*this).from_device_units(iSectionWidths[aSectionIndex].first != boost::none ? *iSectionWidths[aSectionIndex].first : iSectionWidths[aSectionIndex].second);
+		return units_converter(*this).from_device_units(iSectionWidths[aSectionIndex].first != boost::none ? 
+			*iSectionWidths[aSectionIndex].first : 
+			iSectionWidths[aSectionIndex].second);
 	}
 
 	dimension header_view::total_width() const
@@ -352,7 +357,6 @@ namespace neogfx
 	void header_view::update_from_row(uint32_t aRow, bool aUpdateOwner)
 	{
 		graphics_context gc(*this);
-		dimension rowHorizontalExtent = 0.0;
 		bool updated = false;
 		for (uint32_t col = 0; col < model().columns(item_model_index(aRow)); ++col)
 		{

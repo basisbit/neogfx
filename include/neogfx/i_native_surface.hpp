@@ -20,20 +20,36 @@
 #pragma once
 
 #include "neogfx.hpp"
-#include "i_widget.hpp"
 #include "mouse.hpp"
+#include "event.hpp"
+#include "graphics_context.hpp"
 
 namespace neogfx
 {
 	class i_native_graphics_context;
+	class i_widget;
 
 	class i_native_surface
 	{
 	public:
+		event<> rendering_check;
+		event<> rendering;
+		event<> rendering_finished;
+	public:
+		struct context_mismatch : std::logic_error { context_mismatch() : std::logic_error("neogfx::i_native_surface::context_mismatch") {} };
+	public:
 		virtual ~i_native_surface() {}
+	public:
+		virtual void close() = 0;
+	public:
+		virtual neogfx::logical_coordinate_system logical_coordinate_system() const = 0;
+		virtual void set_logical_coordinate_system(neogfx::logical_coordinate_system aSystem) = 0;
+		virtual const vector4& logical_coordinates() const = 0;
+		virtual void set_logical_coordinates(const vector4& aCoordinates) = 0;
 	public:
 		virtual void* handle() const = 0;
 		virtual void* native_handle() const = 0;
+		virtual void* native_context() const = 0;
 		virtual point surface_position() const = 0;
 		virtual void move_surface(const point& aPosition) = 0;
 		virtual size surface_size() const = 0;
@@ -45,11 +61,17 @@ namespace neogfx
 		virtual void set_mouse_cursor(mouse_system_cursor aSystemCursor) = 0;
 		virtual void restore_mouse_cursor() = 0;
 	public:
+		virtual uint64_t frame_counter() const = 0;
 		virtual bool using_frame_buffer() const = 0;
 		virtual void limit_frame_rate(uint32_t aFps) = 0;
-		virtual void clear_rendering_flag() = 0;
 	public:
-		virtual void invalidate_surface(const rect& aInvalidatedRect) = 0;
+		virtual void invalidate(const rect& aInvalidatedRect) = 0;
+		virtual void render() = 0;
+		virtual bool is_rendering() const = 0;
 		virtual std::unique_ptr<i_native_graphics_context> create_graphics_context() const = 0;
+		virtual std::unique_ptr<i_native_graphics_context> create_graphics_context(const i_widget& aWidget) const = 0;
+	public:
+		virtual void activate_context() const = 0;
+		virtual void deactivate_context() const = 0;
 	};
 }

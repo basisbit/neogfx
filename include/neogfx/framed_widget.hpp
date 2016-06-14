@@ -33,6 +33,7 @@ namespace neogfx
 			DottedFrame,
 			DashedFrame,
 			SolidFrame,
+			ContainerFrame,
 			DoubleFrame,
 			GrooveFrame,
 			RidgeFrame,
@@ -47,13 +48,20 @@ namespace neogfx
 		framed_widget(i_layout& aLayout, style_e aStyle = SolidFrame, dimension aLineWidth = 1.0);
 		~framed_widget();
 	public:
-		virtual point origin(bool aNonClient = false) const;
 		virtual rect client_rect(bool aIncludeMargins = true) const;
+	public:
+		virtual size minimum_size(const optional_size& aAvailableSpace = optional_size()) const;
+		virtual size maximum_size(const optional_size& aAvailableSpace = optional_size()) const;
 	public:
 		virtual bool transparent_background() const;
 		virtual void paint_non_client(graphics_context& aGraphicsContext) const;
 		virtual void paint(graphics_context& aGraphicsContext) const;
+	public:
+		void set_style(style_e aStyle);
 	protected:
+		virtual colour frame_colour() const;
+	protected:
+		dimension line_width() const;
 		dimension effective_frame_width() const;
 	private:
 		style_e iStyle;

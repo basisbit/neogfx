@@ -31,6 +31,15 @@ namespace neogfx
 	{
 		// types
 	public:
+		enum shape_type_e
+		{
+			Vertices,
+			Quads,
+			Lines,
+			LineLoop,
+			LineStrip,
+			ConvexPolygon,
+		};
 		typedef PointType point_type;
 		typedef typename point_type::coordinate_type coordinate_type;
 		typedef typename point_type::coordinate_type coordinate_delta_type;
@@ -75,11 +84,11 @@ namespace neogfx
 		typedef std::vector<intersect> intersect_list;
 		// construction
 	public:
-		basic_path(paths_size_type aPathCountHint = 0)
+		basic_path(shape_type_e aShape = ConvexPolygon, paths_size_type aPathCountHint = 0) : iShape(aShape)
 		{
 			iPaths.reserve(aPathCountHint);
 		}
-		basic_path(const rect_type& aRect)
+		basic_path(const rect_type& aRect, shape_type_e aShape = ConvexPolygon) : iShape(aShape)
 		{
 			iPaths.reserve(5);
 			move_to(aRect.top_left());
@@ -90,56 +99,75 @@ namespace neogfx
 		}
 		// operations
 	public:
-		point_type position() const { return iPosition; }
-		void set_position(point_type aPosition) { iPosition = aPosition; }
-		const paths_type& paths() const { return iPaths; }
-		paths_type& paths() { return iPaths; }
-		enum shape_type_e
-		{
-			Quads,
-			LineLoop,
-			ConvexPolygon,
-		};
-		std::vector<coordinate_type> to_vertices(const typename paths_type::value_type& aPath, shape_type_e aShape = ConvexPolygon) const
+		shape_type_e shape() const 
+		{		
+			return iShape; 
+		}
+		void set_shape(shape_type_e aShape) 
+		{ 
+			iShape = aShape; 
+		}
+		point_type position() const 
+		{ 
+			return iPosition; 
+		}
+		void set_position(point_type aPosition) 
+		{ 
+			iPosition = aPosition; 
+			iBoundingRect.reset();
+		}
+		const paths_type& paths() const 
+		{ 
+			return iPaths; 
+		}
+		paths_type& paths() 
+		{ 
+			return iPaths; 
+		}
+		std::vector<coordinate_type> to_vertices(const typename paths_type::value_type& aPath, coordinate_type aPixelAdjust = 0.0) const
 		{
 			std::vector<coordinate_type> result;
-			result.reserve((aPath.size() + 1) * (aShape == Quads ? 6 : 1) * 2);
+			result.reserve((aPath.size() + 1) * (iShape == Quads ? 6 : 1) * 2);
 			if (aPath.size() > 2)
 			{
-				if (aShape == ConvexPolygon)
+				if (iShape == ConvexPolygon)
 				{
-					result.push_back(bounding_rect().centre().x + position().x);
-					result.push_back(bounding_rect().centre().y + position().y);
+					result.push_back(bounding_rect(false).centre().x + position().x + aPixelAdjust);
+					result.push_back(bounding_rect(false).centre().y + position().y + aPixelAdjust);
 				}
 				for (auto vi = aPath.begin(); vi != aPath.end(); ++vi)
 				{
-					switch (aShape)
+					switch (iShape)
 					{
 					case Quads:
 						if (vi + 1 != aPath.end())
 						{
-							const coordinate_type nippleNuts = static_cast<coordinate_type>(0.5);
-							result.push_back(vi->x + position().x);
-							result.push_back(vi->y + position().y);
-							result.push_back((vi+1)->x + position().x);
-							result.push_back((vi+1)->y + position().y);
-							result.push_back(vi->x + position().x + nippleNuts);
-							result.push_back(vi->y + position().y + nippleNuts);
-							result.push_back((vi + 1)->x + position().x + nippleNuts);
-							result.push_back((vi + 1)->y + position().y + nippleNuts);
+							result.push_back(vi->x + position().x + aPixelAdjust);
+							result.push_back(vi->y + position().y + aPixelAdjust);
+							result.push_back((vi+1)->x + position().x + aPixelAdjust);
+							result.push_back((vi+1)->y + position().y + aPixelAdjust);
+							result.push_back(vi->x + position().x + aPixelAdjust);
+							result.push_back(vi->y + position().y + aPixelAdjust);
+							result.push_back((vi + 1)->x + position().x + aPixelAdjust);
+							result.push_back((vi + 1)->y + position().y + aPixelAdjust);
 						}
 						break;
 					case ConvexPolygon:
 					default:
-						result.push_back(vi->x + position().x);
-						result.push_back(vi->y + position().y);
+						result.push_back(vi->x + position().x + aPixelAdjust);
+						result.push_back(vi->y + position().y + aPixelAdjust);
 						break;
 					}
 				}
-				if (aShape == LineLoop && aPath[0] == aPath[aPath.size() - 1])
+				if (iShape == LineLoop && aPath[0] == aPath[aPath.size() - 1])
 				{
 					result.pop_back();
 					result.pop_back();
+				}
+				else if (iShape == ConvexPolygon && aPath[0] != aPath[aPath.size() - 1])
+				{
+					result.push_back(aPath[0].x + aPixelAdjust);
+					result.push_back(aPath[0].y + aPixelAdjust);
 				}
 			}
 			return result;
@@ -179,20 +207,20 @@ namespace neogfx
 			line_to(point_type(aX, aY));
 		}
 		void add_rect(const rect_type& aRectangle);
-		void inflate(const delta_type& aDeltas)
+		void inflate(const delta_type& aDelta)
 		{
-			rect_type boundingRect = bounding_rect();
+			rect_type boundingRect = bounding_rect(false);
 			for (paths_type::iterator i = iPaths.begin(); i != iPaths.end(); ++i)
 				for (path_type::iterator j = i->begin(); j != i->end(); ++j)
 				{
 					if (j->x < boundingRect.x + static_cast<coordinate_type>(boundingRect.cx / 2))
-						j->x -= aDeltas.dx;
+						j->x -= aDelta.dx;
 					else
-						j->x += aDeltas.dx;
+						j->x += aDelta.dx;
 					if (j->y < boundingRect.y + static_cast<coordinate_type>(boundingRect.cy / 2))
-						j->y -= aDeltas.dy;
+						j->y -= aDelta.dy;
 					else
-						j->y += aDeltas.dy;
+						j->y += aDelta.dy;
 				}
 			iBoundingRect.reset();
 		}
@@ -208,10 +236,11 @@ namespace neogfx
 		{
 			inflate(delta_type(-aDeltaX, -aDeltaY));
 		}
-		const rect_type& bounding_rect(size_type aPixelWidthAdjustment = size_type(1.0, 1.0)) const;
+		const rect_type& bounding_rect(bool aOffsetPosition = true, size_type aPixelWidthAdjustment = size_type(1.0, 1.0)) const;
 		clip_rect_list clip_rects(const point& aOrigin) const;
 		// attributes
 	private:
+		shape_type_e iShape;
 		point_type iPosition;
 		boost::optional<point_type> iPointFrom;
 		paths_type iPaths;
@@ -225,5 +254,5 @@ namespace neogfx
 namespace neogfx
 {
 	typedef basic_path<point> path;
-	typedef basic_path<point> path;
+	typedef boost::optional<path> optional_path;
 }

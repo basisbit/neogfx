@@ -32,7 +32,13 @@ namespace neogfx
 		enum type_e
 		{
 			Vertical	= 0x01,
-			Horizontal	= 0x02
+			Horizontal	= 0x02,
+		};
+		enum style_e
+		{
+			Normal,
+			Button,
+			Invisible
 		};
 		typedef double value_type;
 		enum element_e
@@ -65,6 +71,7 @@ namespace neogfx
 		struct element_not_clicked : std::logic_error{ element_not_clicked() : std::logic_error("neogfx::i_scrollbar::element_not_clicked") {} };
 	public:
 		virtual type_e type() const = 0;
+		virtual style_e style() const = 0;
 		virtual void show() = 0;
 		virtual void hide() = 0;
 		virtual bool visible() const = 0;
@@ -103,6 +110,6 @@ namespace neogfx
 		virtual rect scrollbar_geometry(const i_units_context& aContext, const i_scrollbar& aScrollbar) const = 0;
 		virtual void scrollbar_updated(const i_scrollbar& aScrollbar, i_scrollbar::update_reason_e aReason) = 0;
 		virtual colour scrollbar_colour(const i_scrollbar& aScrollbar) const = 0;
-		virtual const i_surface& surface() const = 0;
+		virtual const i_surface& scrollbar_surface() const = 0;
 	};
 }

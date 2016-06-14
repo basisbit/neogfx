@@ -27,106 +27,187 @@
 namespace neogfx
 {
 	grid_layout::grid_layout(i_widget& aParent) :
-		layout(aParent)
+		layout(aParent), iRowLayout(*this)
 	{
+		iRowLayout.set_margins(neogfx::margins{});
+		iRowLayout.set_spacing(spacing());
+		iRowLayout.set_always_use_spacing(true);
 	}
 
 	grid_layout::grid_layout(i_layout& aParent) :
-		layout(aParent)
+		layout(aParent), iRowLayout(*this)
 	{
+		iRowLayout.set_margins(neogfx::margins{});
+		iRowLayout.set_spacing(spacing());
+		iRowLayout.set_always_use_spacing(true);
 	}
 
 	grid_layout::grid_layout(cell_coordinate aRows, cell_coordinate aColumns, i_widget& aParent) :
-		layout(aParent), iDimensions(aRows, aColumns)
+		layout(aParent), iRowLayout(*this), iDimensions{aColumns, aRows}
 	{
+		iRowLayout.set_margins(neogfx::margins{});
+		iRowLayout.set_spacing(spacing());
+		iRowLayout.set_always_use_spacing(true);
 	}
 
 	grid_layout::grid_layout(cell_coordinate aRows, cell_coordinate aColumns, i_layout& aParent) :
-		layout(aParent), iDimensions(aRows, aColumns)
+		layout(aParent), iRowLayout(*this), iDimensions(aColumns, aRows)
 	{
+		iRowLayout.set_margins(neogfx::margins{});
+		iRowLayout.set_spacing(spacing());
+		iRowLayout.set_always_use_spacing(true);
+	}
+
+	grid_layout::cell_coordinate grid_layout::rows() const
+	{
+		return iDimensions.cy;
+	}
+
+	grid_layout::cell_coordinate grid_layout::columns() const
+	{
+		return iDimensions.cx;
+	}
+
+	grid_layout::cell_coordinates grid_layout::dimensions() const
+	{
+		return iDimensions;
 	}
 
 	void grid_layout::set_dimensions(cell_coordinate aRows, cell_coordinate aColumns)
 	{
-		iDimensions = cell_coordinates(aRows, aColumns);
+		iDimensions = cell_dimensions{aColumns, aRows};
 	}
 
-	void grid_layout::add_widget(i_widget& aWidget)
+	void grid_layout::add_item(i_widget& aWidget)
 	{
-		add_widget(iCursor.first, iCursor.second, aWidget);
+		add_item(iCursor.y, iCursor.x, aWidget);
 		increment_cursor();
 	}
 
-	void grid_layout::add_widget(std::shared_ptr<i_widget> aWidget)
+	void grid_layout::add_item(std::shared_ptr<i_widget> aWidget)
 	{
-		add_widget(iCursor.first, iCursor.second, aWidget);
+		add_item(iCursor.y, iCursor.x, aWidget);
 		increment_cursor();
 	}
 
-	void grid_layout::add_layout(i_layout& aLayout)
+	void grid_layout::add_item(i_layout& aLayout)
 	{
-		add_layout(iCursor.first, iCursor.second, aLayout);
+		add_item(iCursor.y, iCursor.x, aLayout);
 		increment_cursor();
 	}
 
-	void grid_layout::add_layout(std::shared_ptr<i_layout> aLayout)
+	void grid_layout::add_item(std::shared_ptr<i_layout> aLayout)
 	{
-		add_layout(iCursor.first, iCursor.second, aLayout);
+		add_item(iCursor.y, iCursor.x, aLayout);
 		increment_cursor();
 	}
 
-	void grid_layout::add_widget(cell_coordinate aRow, cell_coordinate aColumn, i_widget& aWidget)
+	void grid_layout::add_item(cell_coordinate aRow, cell_coordinate aColumn, i_widget& aWidget)
 	{
-		if (&aWidget.layout() == this)
+		if (aWidget.has_layout() && &aWidget.layout() == this)
 			throw widget_already_added();
-		if (iCells.find(cell_coordinates(aRow, aColumn)) != iCells.end())
-			throw cell_occupied();
-		iCells[cell_coordinates(aRow, aColumn)] = items().insert(items().end(), item(aWidget));
-		iDimensions.first = std::max(iDimensions.first, aRow);
-		iDimensions.second = std::max(iDimensions.second, aColumn);
+		if (iCells.find(cell_coordinates{aColumn, aRow}) != iCells.end())
+			remove_item(aRow, aColumn);
+		for (cell_coordinate col = 0; col < aColumn; ++col)
+			if (iCells.find(cell_coordinates{col, aRow}) == iCells.end())
+				add_spacer(aRow, col);
+		iCells[cell_coordinates{aColumn, aRow}] = items().insert(items().end(), item(*this, aWidget));
+		iDimensions.cy = std::max(iDimensions.cy, aRow + 1);
+		iDimensions.cx = std::max(iDimensions.cx, aColumn + 1);
 		if (owner() != 0)
 			items().back().set_owner(owner());
+		row_layout(aRow).replace_item(aColumn, aWidget);
 	}
 
-	void grid_layout::add_widget(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_widget> aWidget)
+	void grid_layout::add_item(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_widget> aWidget)
 	{
-		if (&aWidget->layout() == this)
+		if (aWidget->has_layout() && &aWidget->layout() == this)
 			throw widget_already_added();
-		if (iCells.find(cell_coordinates(aRow, aColumn)) != iCells.end())
-			throw cell_occupied();
-		iCells[cell_coordinates(aRow, aColumn)] = items().insert(items().end(), item(aWidget));
-		iDimensions.first = std::max(iDimensions.first, aRow);
-		iDimensions.second = std::max(iDimensions.second, aColumn);
+		if (iCells.find(cell_coordinates{aColumn, aRow}) != iCells.end())
+			remove_item(aRow, aColumn);
+		for (cell_coordinate col = 0; col < aColumn; ++col)
+			if (iCells.find(cell_coordinates{ col, aRow }) == iCells.end())
+				add_spacer(aRow, col);
+		iCells[cell_coordinates{aColumn, aRow}] = items().insert(items().end(), item(*this, aWidget));
+		iDimensions.cy = std::max(iDimensions.cy, aRow + 1);
+		iDimensions.cx = std::max(iDimensions.cx, aColumn + 1);
 		if (owner() != 0)
 			items().back().set_owner(owner());
+		row_layout(aRow).replace_item(aColumn, aWidget);
 	}
 
-	void grid_layout::add_layout(cell_coordinate aRow, cell_coordinate aColumn, i_layout& aLayout)
+	void grid_layout::add_item(cell_coordinate aRow, cell_coordinate aColumn, i_layout& aLayout)
 	{
-		if (iCells.find(cell_coordinates(aRow, aColumn)) != iCells.end())
-			throw cell_occupied();
-		iCells[cell_coordinates(aRow, aColumn)] = items().insert(items().end(), item(aLayout));
-		iDimensions.first = std::max(iDimensions.first, aRow);
-		iDimensions.second = std::max(iDimensions.second, aColumn);
+		if (&aLayout == &iRowLayout)
+		{
+			if (owner() != 0)
+				aLayout.set_owner(owner());
+			return;
+		}
+		if (iCells.find(cell_coordinates{aColumn, aRow}) != iCells.end())
+			remove_item(aRow, aColumn);
+		for (cell_coordinate col = 0; col < aColumn; ++col)
+			if (iCells.find(cell_coordinates{ col, aRow }) == iCells.end())
+				add_spacer(aRow, col);
+		iCells[cell_coordinates{aColumn, aRow}] = items().insert(items().end(), item(*this, aLayout));
+		iDimensions.cy = std::max(iDimensions.cy, aRow + 1);
+		iDimensions.cx = std::max(iDimensions.cx, aColumn + 1);
 		if (owner() != 0)
 			items().back().set_owner(owner());
+		row_layout(aRow).replace_item(aColumn, aLayout);
 	}
 
-	void grid_layout::add_layout(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_layout> aLayout)
+	void grid_layout::add_item(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_layout> aLayout)
 	{
-		if (iCells.find(cell_coordinates(aRow, aColumn)) != iCells.end())
-			throw cell_occupied();
-		iCells[cell_coordinates(aRow, aColumn)] = items().insert(items().end(), item(aLayout));
-		iDimensions.first = std::max(iDimensions.first, aRow);
-		iDimensions.second = std::max(iDimensions.second, aColumn);
+		if (iCells.find(cell_coordinates{aColumn, aRow}) != iCells.end())
+			remove_item(aRow, aColumn);
+		for (cell_coordinate col = 0; col < aColumn; ++col)
+			if (iCells.find(cell_coordinates{ col, aRow }) == iCells.end())
+				add_spacer(aRow, col);
+		iCells[cell_coordinates{aColumn, aRow}] = items().insert(items().end(), item(*this, aLayout));
+		iDimensions.cy = std::max(iDimensions.cy, aRow + 1);
+		iDimensions.cx = std::max(iDimensions.cx, aColumn + 1);
 		if (owner() != 0)
 			items().back().set_owner(owner());
+		row_layout(aRow).replace_item(aColumn, aLayout);
+	}
+
+	void grid_layout::add_item(cell_coordinate aRow, cell_coordinate aColumn, i_spacer& aSpacer)
+	{
+		if (iCells.find(cell_coordinates{ aColumn, aRow }) != iCells.end())
+			remove_item(aRow, aColumn);
+		for (cell_coordinate col = 0; col < aColumn; ++col)
+			if (iCells.find(cell_coordinates{ col, aRow }) == iCells.end())
+				add_spacer(aRow, col);
+		iCells[cell_coordinates{ aColumn, aRow }] = items().insert(items().end(), item(*this, aSpacer));
+		iDimensions.cy = std::max(iDimensions.cy, aRow + 1);
+		iDimensions.cx = std::max(iDimensions.cx, aColumn + 1);
+		if (owner() != 0)
+			items().back().set_owner(owner());
+		aSpacer.set_parent(*this);
+		row_layout(aRow).replace_item(aColumn, aSpacer);
+	}
+
+	void grid_layout::add_item(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_spacer> aSpacer)
+	{
+		if (iCells.find(cell_coordinates{ aColumn, aRow }) != iCells.end())
+			remove_item(aRow, aColumn);
+		for (cell_coordinate col = 0; col < aColumn; ++col)
+			if (iCells.find(cell_coordinates{ col, aRow }) == iCells.end())
+				add_spacer(aRow, col);
+		iCells[cell_coordinates{ aColumn, aRow }] = items().insert(items().end(), item(*this, aSpacer));
+		iDimensions.cy = std::max(iDimensions.cy, aRow + 1);
+		iDimensions.cx = std::max(iDimensions.cx, aColumn + 1);
+		if (owner() != 0)
+			items().back().set_owner(owner());
+		aSpacer->set_parent(*this);
+		row_layout(aRow).replace_item(aColumn, aSpacer);
 	}
 
 	i_spacer& grid_layout::add_spacer()
 	{
 		auto s = std::make_shared<spacer>(static_cast<i_spacer::expansion_policy_e>(i_spacer::ExpandHorizontally | i_spacer::ExpandVertically));
-		add_spacer(iCursor.first, iCursor.second, s);
+		add_item(iCursor.y, iCursor.x, s);
 		increment_cursor();
 		return *s;
 	}
@@ -135,96 +216,123 @@ namespace neogfx
 	{
 		auto s = std::make_shared<spacer>(static_cast<i_spacer::expansion_policy_e>(i_spacer::ExpandHorizontally | i_spacer::ExpandVertically));
 		cell_coordinates oldCursor = iCursor;
-		iCursor.first = 0;
-		iCursor.second = 0;
-		while (aPosition)
+		iCursor.y = 0;
+		iCursor.x = 0;
+		while (aPosition--)
 			increment_cursor();
-		add_spacer(iCursor.first, iCursor.second, s);
+		add_item(iCursor.y, iCursor.x, s);
 		iCursor = oldCursor;
 		return *s;
 	}
 
 	i_spacer& grid_layout::add_spacer(cell_coordinate aRow, cell_coordinate aColumn)
 	{
-		if (iCells.find(cell_coordinates(aRow, aColumn)) != iCells.end())
-			throw cell_occupied();
+		if (iCells.find(cell_coordinates{ aColumn, aRow }) != iCells.end())
+			remove_item(aRow, aColumn);
 		auto s = std::make_shared<spacer>(static_cast<i_spacer::expansion_policy_e>(i_spacer::ExpandHorizontally | i_spacer::ExpandVertically));
-		add_spacer(aRow, aColumn, s);
+		add_item(aRow, aColumn, s);
 		return *s;
 	}
 
-	void grid_layout::add_spacer(cell_coordinate aRow, cell_coordinate aColumn, i_spacer& aSpacer)
+	void grid_layout::remove_item(std::size_t aIndex)
 	{
-		if (iCells.find(cell_coordinates(aRow, aColumn)) != iCells.end())
-			throw cell_occupied();
-		iCells[cell_coordinates(aRow, aColumn)] = items().insert(items().end(), item(aSpacer));
-		iDimensions.first = std::max(iDimensions.first, aRow);
-		iDimensions.second = std::max(iDimensions.second, aColumn);
-		if (owner() != 0)
-			items().back().set_owner(owner());
-		aSpacer.set_parent(*this);
+		auto itemIter = std::next(items().begin(), aIndex);
+		for (cell_list::reverse_iterator i = iCells.rbegin(); i != iCells.rend(); ++i)
+			if (i->second == itemIter)
+			{
+				remove_item(i->first.y, i->first.x);
+				break;
+			}
 	}
 
-	void grid_layout::add_spacer(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_spacer> aSpacer)
+	void grid_layout::remove_item(cell_coordinate aRow, cell_coordinate aColumn)
 	{
-		if (iCells.find(cell_coordinates(aRow, aColumn)) != iCells.end())
-			throw cell_occupied();
-		iCells[cell_coordinates(aRow, aColumn)] = items().insert(items().end(), item(aSpacer));
-		iDimensions.first = std::max(iDimensions.first, aRow);
-		iDimensions.second = std::max(iDimensions.second, aColumn);
-		if (owner() != 0)
-			items().back().set_owner(owner());
-		aSpacer->set_parent(*this);
+		auto iterExisting = iCells.find(cell_coordinates{ aColumn, aRow });
+		if (iterExisting == iCells.end())
+			throw cell_unoccupied();
+		auto itemIterExisting = iterExisting->second;
+		row_layout(aRow).remove_item(aColumn);
+		iCells.erase(iterExisting);
+		iDimensions = cell_dimensions{};
+		for (const auto& cell : iCells)
+		{
+			iDimensions.cy = std::max(iDimensions.cy, cell.first.y);
+			iDimensions.cx = std::max(iDimensions.cx, cell.first.x);
+		}
+		iCursor = cell_coordinates{};
+		layout::remove_item(itemIterExisting);
+	}
+
+	void grid_layout::remove_items()
+	{
+		layout::remove_items();
+		iRowLayout.remove_items();
+		iRows.clear();
+		iCells.clear();
+		iDimensions = cell_dimensions{};
+		iCursor = cell_coordinates{};
 	}
 
 	i_widget& grid_layout::get_widget(cell_coordinate aRow, cell_coordinate aColumn)
 	{
-		if (iCells.find(cell_coordinates(aRow, aColumn)) == iCells.end())
+		if (iCells.find(cell_coordinates{aColumn, aRow}) == iCells.end())
 			throw cell_unoccupied();
-		if (iCells[cell_coordinates(aRow, aColumn)]->get().is<item::widget_pointer>())
-			return *static_variant_cast<item::widget_pointer&>(iCells[cell_coordinates(aRow, aColumn)]->get());
+		if (iCells[cell_coordinates{aColumn, aRow}]->get().is<item::widget_pointer>())
+			return *static_variant_cast<item::widget_pointer&>(iCells[cell_coordinates{aColumn, aRow}]->get());
 		else
 			throw wrong_item_type();
 	}
 
 	i_layout& grid_layout::get_layout(cell_coordinate aRow, cell_coordinate aColumn)
 	{
-		if (iCells.find(cell_coordinates(aRow, aColumn)) == iCells.end())
+		if (iCells.find(cell_coordinates{aColumn, aRow}) == iCells.end())
 			throw cell_unoccupied();
-		if (iCells[cell_coordinates(aRow, aColumn)]->get().is<item::layout_pointer>())
-			return *static_variant_cast<item::layout_pointer&>(iCells[cell_coordinates(aRow, aColumn)]->get());
+		if (iCells[cell_coordinates{aColumn, aRow}]->get().is<item::layout_pointer>())
+			return *static_variant_cast<item::layout_pointer&>(iCells[cell_coordinates{aColumn, aRow}]->get());
 		else
 			throw wrong_item_type();
 	}
 
-	size grid_layout::minimum_size() const
+	size grid_layout::minimum_size(const optional_size& aAvailableSpace) const
 	{
 		if (items_visible() == 0)
 			return size{};
 		size result;
-		for (cell_coordinate row = 0; row < visible_rows(); ++row)
-			result.cy += row_minimum_size(row);
-		for (cell_coordinate column = 0; column < visible_columns(); ++column)
-			result.cx += column_minimum_size(column);
+		uint32_t visibleColumns = visible_columns();
+		uint32_t visibleRows = visible_rows();
+		if (visibleRows == 6)
+			std::cerr << "ff" << std::endl;
+		for (cell_coordinate row = 0; row < rows(); ++row)
+		{
+			if (!is_row_visible(row))
+				continue;
+			result.cy += row_minimum_size(row, aAvailableSpace);
+		}
+		for (cell_coordinate column = 0; column < columns(); ++column)
+		{
+			if (!is_column_visible(column))
+				continue;
+			result.cx += column_minimum_size(column, aAvailableSpace);
+		}
 		result.cx += (margins().left + margins().right);
 		result.cy += (margins().top + margins().bottom);
-		if (result.cx != std::numeric_limits<size::dimension_type>::max() && visible_columns() > 0)
-			result.cx += (spacing().cx * (visible_columns() - 1));
-		if (result.cy != std::numeric_limits<size::dimension_type>::max() && visible_rows() > 0)
-			result.cy += (spacing().cy * (visible_rows() - 1));
-		result.cx = std::max(result.cx, layout::minimum_size().cx);
-		result.cy = std::max(result.cy, layout::minimum_size().cy);
+		if (result.cx != std::numeric_limits<size::dimension_type>::max() && visibleColumns> 0)
+			result.cx += (spacing().cx * (visibleColumns - 1));
+		if (result.cy != std::numeric_limits<size::dimension_type>::max() && visibleRows > 0)
+			result.cy += (spacing().cy * (visibleRows - 1));
+		result.cx = std::max(result.cx, layout::minimum_size(aAvailableSpace).cx);
+		result.cy = std::max(result.cy, layout::minimum_size(aAvailableSpace).cy);
 		return result;
 	}
 
-	size grid_layout::maximum_size() const
+	size grid_layout::maximum_size(const optional_size& aAvailableSpace) const
 	{
 		if (items_visible(static_cast<item_type_e>(ItemTypeWidget | ItemTypeLayout | ItemTypeSpacer)) == 0)
 			return size{};
 		size result;
 		for (cell_coordinate row = 0; row < visible_rows(); ++row)
 		{
-			size::dimension_type rowMaxSize = row_maximum_size(row);
+			size::dimension_type rowMaxSize = row_maximum_size(row, aAvailableSpace);
 			if (rowMaxSize == std::numeric_limits<size::dimension_type>::max())
 				result.cy = rowMaxSize;
 			else if (result.cy != std::numeric_limits<size::dimension_type>::max())
@@ -232,7 +340,7 @@ namespace neogfx
 		}
 		for (cell_coordinate column = 0; column < visible_columns(); ++column)
 		{
-			size::dimension_type columnMaxSize = column_maximum_size(column);
+			size::dimension_type columnMaxSize = column_maximum_size(column, aAvailableSpace);
 			if (columnMaxSize == std::numeric_limits<size::dimension_type>::max())
 				result.cx = columnMaxSize;
 			else if (result.cx != std::numeric_limits<size::dimension_type>::max())
@@ -247,126 +355,126 @@ namespace neogfx
 		if (result.cy != std::numeric_limits<size::dimension_type>::max() && visible_rows() > 0)
 			result.cy += (spacing().cy * (visible_rows() - 1));
 		if (result.cx != std::numeric_limits<size::dimension_type>::max())
-			result.cx = std::min(result.cx, layout::maximum_size().cx);
+			result.cx = std::min(result.cx, layout::maximum_size(aAvailableSpace).cx);
 		if (result.cy != std::numeric_limits<size::dimension_type>::max())
-			result.cy = std::min(result.cy, layout::maximum_size().cy);
+			result.cy = std::min(result.cy, layout::maximum_size(aAvailableSpace).cy);
 		return result;
+	}
+
+	void grid_layout::set_spacing(const size& aSpacing)
+	{
+		layout::set_spacing(aSpacing);
+		iRowLayout.set_spacing(aSpacing);
+		for (auto& r : iRows)
+			r->set_spacing(aSpacing);
+	}
+
+	void grid_layout::add_span(cell_coordinate aRowFrom, cell_coordinate aColumnFrom, uint32_t aRows, uint32_t aColumns)
+	{
+		add_span({ aColumnFrom, aRowFrom }, { aColumnFrom + aColumns - 1, aRowFrom + aRows - 1});
+	}
+
+	void grid_layout::add_span(const cell_coordinates& aFrom, const cell_coordinates& aTo)
+	{
+		iSpans.push_back(std::make_pair(aFrom, aTo));
+		if (owner() != 0)
+			owner()->ultimate_ancestor().layout_items(true);
 	}
 
 	void grid_layout::layout_items(const point& aPosition, const size& aSize)
 	{
 		if (!enabled())
 			return;
-		if (items_visible(static_cast<item_type_e>(ItemTypeWidget | ItemTypeLayout | ItemTypeSpacer)) == 0)
-			return;
+		owner()->layout_items_started();
+		next_layout_id();
+		set_position(aPosition);
+		set_extents(aSize);
+		for (auto& r : iRows)
+			while (r->item_count() < iDimensions.cx)
+				r->add_spacer();
+		point availablePos = aPosition + point{ margins().left, margins().top };
 		size availableSize = aSize;
 		availableSize.cx -= (margins().left + margins().right);
 		availableSize.cy -= (margins().top + margins().bottom);
-		if (visible_rows() > 0)
-			availableSize.cy -= (spacing().cy * (visible_rows() - 1));
-		if (visible_columns() > 0)
-			availableSize.cx -= (spacing().cx * (visible_columns() - 1));
-		size leftover = availableSize;
-		size eachLeftover = size(std::floor(leftover.cx / visible_columns()), std::floor(leftover.cy / visible_rows()));
-		enum why_e { TooSmall, TooBig };
-		std::map<cell_coordinate, why_e> rowsNotUsingLeftover;
-		std::map<cell_coordinate, why_e> columnsNotUsingLeftover;
-		bool done = false;
-		while (!done)
+		iRowLayout.layout_items(availablePos, availableSize);
+		std::vector<dimension> maxRowHeight(iDimensions.cy);
+		std::vector<dimension> maxColWidth(iDimensions.cx);
+		for (cell_coordinate row = 0; row < iDimensions.cy; ++row)
 		{
-			done = true;
-			for (cell_coordinate row = 0; row < visible_rows(); ++row)
+			for (cell_coordinate col = 0; col < iDimensions.cx; ++col)
 			{
-				size::dimension_type rowMaxSize = row_maximum_size(row);
-				size::dimension_type rowMinSize = row_minimum_size(row);
-				if (rowMaxSize < eachLeftover.cy && rowsNotUsingLeftover.find(row) == rowsNotUsingLeftover.end())
+				auto i = iCells.find(cell_coordinates{ col, row });
+				if (i != iCells.end())
 				{
-					rowsNotUsingLeftover[row] = TooSmall;
-					leftover.cy -= rowMaxSize;
-					eachLeftover.cy = std::floor(leftover.cy / (visible_rows() - rowsNotUsingLeftover.size()));
-					done = false;
-					break;
-				}
-				else if (rowMinSize > eachLeftover.cy && rowsNotUsingLeftover.find(row) == rowsNotUsingLeftover.end())
-				{
-					rowsNotUsingLeftover[row] = TooBig;
-					leftover.cy -= rowMinSize;
-					eachLeftover.cy = std::floor(leftover.cy / (visible_rows() - rowsNotUsingLeftover.size()));
-					done = false;
-					break;
+					if (i->second->get().is<item::spacer_pointer>() && column_minimum_size(col) != 0.0)
+						continue;
+					auto s = find_span(cell_coordinates{ col, row });
+					if (s == iSpans.end())
+					{
+						maxRowHeight[row] = std::max(maxRowHeight[row], i->second->extents().cy);
+						maxColWidth[col] = std::max(maxColWidth[col], i->second->extents().cx);
+					}
+					else
+					{
+						maxRowHeight[row] = std::max(maxRowHeight[row], 
+							(i->second->extents().cy - spacing().cy * (s->second.y - s->first.y)) / (s->second.y - s->first.y + 1));
+						maxColWidth[col] = std::max(maxColWidth[col],
+							(i->second->extents().cx - spacing().cx * (s->second.x - s->first.x)) / (s->second.x - s->first.x + 1));
+					}
 				}
 			}
 		}
-		done = false;
-		while (!done)
+		point rowPos = availablePos;
+		for (cell_coordinate row = 0; row < iDimensions.cy; ++row)
 		{
-			done = true;
-			for (cell_coordinate column = 0; column < visible_columns(); ++column)
+			if (maxRowHeight[row] == 0.0)
+				continue;
+			point colPos = rowPos;
+			for (cell_coordinate col = 0; col < iDimensions.cx; ++col)
 			{
-				size::dimension_type columnMaxSize = column_maximum_size(column);
-				size::dimension_type columnMinSize = column_minimum_size(column);
-				if (columnMaxSize < eachLeftover.cx && columnsNotUsingLeftover.find(column) == columnsNotUsingLeftover.end())
+				if (maxColWidth[col] == 0.0)
+					continue;
+				auto i = iCells.find(cell_coordinates{ col, row });
+				if (i != iCells.end())
 				{
-					columnsNotUsingLeftover[column] = TooSmall;
-					leftover.cx -= columnMaxSize;
-					eachLeftover.cx = std::floor(leftover.cx / (visible_columns() - columnsNotUsingLeftover.size()));
-					done = false;
-					break;
+					bool foundSpan = false;
+					for (auto& s : iSpans)
+					{
+						if (col >= s.first.x && col <= s.second.x &&
+							row >= s.first.y && row <= s.second.y)
+						{
+							point fromPos;
+							point toPos;
+							point rowPos2 = availablePos;
+							for (cell_coordinate row2 = 0; !foundSpan && row2 <= s.second.y; ++row2)
+							{
+								point colPos2 = rowPos2;
+								for (cell_coordinate col2 = 0; !foundSpan && col2 <= s.second.x; ++col2)
+								{
+									if (row2 == s.first.y && col2 == s.first.x)
+										fromPos = colPos2;
+									if (row2 == s.second.y && col2 == s.second.x)
+									{
+										toPos = colPos2 + size{ maxColWidth[col2], maxRowHeight[row2] };
+										i->second->layout(fromPos, toPos - fromPos);
+										foundSpan = true;
+									}
+									colPos2.x += maxColWidth[col2];
+									colPos2.x += spacing().cx;
+								}
+								rowPos2.y += maxRowHeight[row2];
+								rowPos2.y += spacing().cy;
+							}
+						}
+					}
+					if (!foundSpan)
+						i->second->layout(colPos, size{maxColWidth[col], maxRowHeight[row]});
 				}
-				else if (columnMinSize > eachLeftover.cx && columnsNotUsingLeftover.find(column) == columnsNotUsingLeftover.end())
-				{
-					columnsNotUsingLeftover[column] = TooBig;
-					leftover.cx -= columnMinSize;
-					eachLeftover.cx = std::floor(leftover.cx / (visible_columns() - columnsNotUsingLeftover.size()));
-					done = false;
-					break;
-				}
+				colPos.x += maxColWidth[col];
+				colPos.x += spacing().cx;
 			}
-		}
-		std::pair<uint32_t, uint32_t> numberUsingLeftover(
-			visible_rows() - rowsNotUsingLeftover.size(), 
-			visible_columns() - columnsNotUsingLeftover.size());
-		std::pair<uint32_t, uint32_t> bitsLeft(
-			static_cast<int32_t>(leftover.cy - (eachLeftover.cy * numberUsingLeftover.first)), 
-			static_cast<int32_t>(leftover.cx - (eachLeftover.cx * numberUsingLeftover.second)));
-		std::pair<neolib::bresenham_counter<int32_t>, neolib::bresenham_counter<int32_t>> bits(
-			neolib::bresenham_counter<int32_t>(bitsLeft.first, numberUsingLeftover.first),
-			neolib::bresenham_counter<int32_t>(bitsLeft.second, numberUsingLeftover.second));
-		std::pair<uint32_t, uint32_t> previousBit(0, 0);
-		point nextPos = aPosition;
-		nextPos.y += margins().top;
-		for (cell_coordinate row = 0; row < visible_rows(); ++row)
-		{
-			size s{ 0, 0 };
-			if (rowsNotUsingLeftover.find(row) != rowsNotUsingLeftover.end())
-				s.cy = rowsNotUsingLeftover[row] == TooBig ? row_minimum_size(row) : row_maximum_size(row);
-			else
-			{
-				uint32_t bit = bitsLeft.first != 0 ? bits.first() : 0;
-				s.cy = eachLeftover.cy + static_cast<size::dimension_type>(bit - previousBit.first);
-				previousBit.first = bit;
-			}
-			nextPos.x = aPosition.x + margins().left;
-			bitsLeft.second = static_cast<int32_t>(leftover.cx - (eachLeftover.cx * numberUsingLeftover.second));
-			bits.second = neolib::bresenham_counter<int32_t>(bitsLeft.second, numberUsingLeftover.second);
-			previousBit.second = 0;
-			for (cell_coordinate column = 0; column < visible_columns(); ++column)
-			{
-				if (columnsNotUsingLeftover.find(column) != columnsNotUsingLeftover.end())
-					s.cx = columnsNotUsingLeftover[column] == TooBig ? column_minimum_size(column) : column_maximum_size(column);
-				else
-				{
-					uint32_t bit = bitsLeft.second != 0 ? bits.second() : 0;
-					s.cx = eachLeftover.cx + static_cast<size::dimension_type>(bit - previousBit.second);
-					previousBit.second = bit;
-				}
-				if (iCells.find(cell_coordinates(row, column)) != iCells.end())
-					iCells[cell_coordinates(row, column)]->layout(nextPos, s);
-				nextPos.x += s.cx;
-				nextPos.x += spacing().cx;
-			}
-			nextPos.y += s.cy;
-			nextPos.y += spacing().cy;
+			rowPos.y += maxRowHeight[row];
+			rowPos.y += spacing().cy;
 		}
 		owner()->layout_items_completed();
 	}
@@ -374,27 +482,38 @@ namespace neogfx
 	uint32_t grid_layout::visible_rows() const
 	{
 		uint32_t result = 0;
-		for (cell_coordinate row = 0; row < iDimensions.first; ++row)
-			for (cell_coordinate col = 0; col < iDimensions.second; ++col)
+		for (cell_coordinate row = 0; row < iDimensions.cy; ++row)
+			for (cell_coordinate col = 0; col < iDimensions.cx; ++col)
 			{
-				auto i = iCells.find(std::make_pair(row, col));
-				if (i != iCells.end() && i->second->get().is<item::widget_pointer>() && i->second->visible())
+				auto i = iCells.find(cell_coordinates{col, row});
+				if (i != iCells.end() && !i->second->get().is<item::spacer_pointer>() && i->second->visible() && i->second->minimum_size().cy != 0.0)
 				{
 					++result;
 					break;
 				}
 			}
 		return result;
+	}
+
+	bool grid_layout::is_row_visible(uint32_t aRow) const
+	{
+		for (cell_coordinate col = 0; col < iDimensions.cx; ++col)
+		{
+			auto i = iCells.find(cell_coordinates{col, aRow});
+			if (i != iCells.end() && !i->second->get().is<item::spacer_pointer>() && i->second->visible() && i->second->minimum_size().cy != 0.0)
+				return true;
+		}
+		return false;
 	}
 
 	uint32_t grid_layout::visible_columns() const
 	{
 		uint32_t result = 0;
-		for (cell_coordinate col = 0; col < iDimensions.second; ++col)
-			for (cell_coordinate row = 0; row < iDimensions.first; ++row)
+		for (cell_coordinate col = 0; col < iDimensions.cx; ++col)
+			for (cell_coordinate row = 0; row < iDimensions.cy; ++row)
 			{
-				auto i = iCells.find(std::make_pair(row, col));
-				if (i != iCells.end() && i->second->get().is<item::widget_pointer>() && i->second->visible())
+				auto i = iCells.find(cell_coordinates{col, row});
+				if (i != iCells.end() && !i->second->get().is<item::spacer_pointer>() && i->second->visible() && i->second->minimum_size().cx != 0.0)
 				{
 					++result;
 					break;
@@ -403,49 +522,92 @@ namespace neogfx
 		return result;
 	}
 
-	size::dimension_type grid_layout::row_minimum_size(cell_coordinate aRow) const
+	bool grid_layout::is_column_visible(uint32_t aColumn) const
+	{
+		for (cell_coordinate row = 0; row < iDimensions.cy; ++row)
+		{
+			auto i = iCells.find(cell_coordinates{aColumn, row});
+			if (i != iCells.end() && !i->second->get().is<item::spacer_pointer>() && i->second->visible() && i->second->minimum_size().cx != 0.0)
+				return true;
+		}
+		return false;
+	}
+
+	size::dimension_type grid_layout::row_minimum_size(cell_coordinate aRow, const optional_size& aAvailableSpace) const
 	{
 		size::dimension_type result {};
 		for (const auto& item : iCells)
-			if (item.first.first == aRow)
-				result = std::max(result, item.second->minimum_size().cy);
+			if (item.first.y == aRow)
+			{
+				auto s = find_span(item.first);
+				if (s == iSpans.end())
+					result = std::max(result, item.second->minimum_size(aAvailableSpace).cy);
+				else
+					result = std::max(result, (item.second->minimum_size(aAvailableSpace).cy - spacing().cy * (s->second.y - s->first.y)) / (s->second.y - s->first.y + 1));
+			}
 		return result;
 	}
 
-	size::dimension_type grid_layout::column_minimum_size(cell_coordinate aColumn) const
+	size::dimension_type grid_layout::column_minimum_size(cell_coordinate aColumn, const optional_size& aAvailableSpace) const
 	{
 		size::dimension_type result {};
 		for (const auto& item : iCells)
-			if (item.first.second == aColumn)
-				result = std::max(result, item.second->minimum_size().cx);
+			if (item.first.x == aColumn)
+			{
+				auto s = find_span(item.first);
+				if (s == iSpans.end())
+					result = std::max(result, item.second->minimum_size(aAvailableSpace).cx);
+				else
+					result = std::max(result, (item.second->minimum_size(aAvailableSpace).cx - spacing().cx * (s->second.x - s->first.x)) / (s->second.x - s->first.x + 1));
+			}
 		return result;
 	}
 
-	size::dimension_type grid_layout::row_maximum_size(cell_coordinate aRow) const
+	size::dimension_type grid_layout::row_maximum_size(cell_coordinate aRow, const optional_size& aAvailableSpace) const
 	{
 		size::dimension_type result {};
 		for (const auto& item : iCells)
-			if (item.first.first == aRow)
-				result = std::max(result, item.second->maximum_size().cy);
+			if (item.first.y == aRow)
+				result = std::max(result, item.second->maximum_size(aAvailableSpace).cy);
 		return result;
 	}
 
-	size::dimension_type grid_layout::column_maximum_size(cell_coordinate aColumn) const
+	size::dimension_type grid_layout::column_maximum_size(cell_coordinate aColumn, const optional_size& aAvailableSpace) const
 	{
 		size::dimension_type result {};
 		for (const auto& item : iCells)
-			if (item.first.second == aColumn)
-				result = std::max(result, item.second->maximum_size().cx);
+			if (item.first.x == aColumn)
+				result = std::max(result, item.second->maximum_size(aAvailableSpace).cx);
 		return result;
 	}
 
 	void grid_layout::increment_cursor()
 	{
-		++iCursor.second;
-		if (iCursor.second >= visible_columns())
+		++iCursor.x;
+		if (iCursor.x >= columns())
 		{
-			++iCursor.first;
-			iCursor.second = 0;
+			++iCursor.y;
+			iCursor.x = 0;
 		}
+	}
+
+	horizontal_layout& grid_layout::row_layout(cell_coordinate aRow)
+	{
+		while (aRow >= iRows.size())
+		{
+			iRows.push_back(std::make_shared<horizontal_layout>(iRowLayout));
+			iRows.back()->set_always_use_spacing(true);
+			iRows.back()->set_margins(neogfx::margins{});
+			iRows.back()->set_spacing(spacing());
+		}
+		return *iRows[aRow];
+	}
+
+	grid_layout::span_list::const_iterator grid_layout::find_span(const cell_coordinates& aCell) const
+	{
+		for (auto s = iSpans.begin(); s != iSpans.end(); ++s)
+			if (aCell.x >= s->first.x && aCell.x <= s->second.x && aCell.y >= s->first.y && aCell.y <= s->second.y)
+				return s;
+		return iSpans.end();
 	}
 }

@@ -44,13 +44,14 @@ namespace neogfx
 			UsvStageDone
 		};
 	public:
-		scrollable_widget(bool aHasFrame = true);
-		scrollable_widget(const scrollable_widget&) = delete;
-		scrollable_widget(i_widget& aParent, bool aHasFrame = true);
-		scrollable_widget(i_layout& aLayout, bool aHasFrame = true);
+		scrollable_widget(i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::SolidFrame);
+		scrollable_widget(i_widget& aParent, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::SolidFrame);
+		scrollable_widget(i_layout& aLayout, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::SolidFrame);
 		~scrollable_widget();
+		scrollable_widget(const scrollable_widget&) = delete;
 	public:
-		virtual const i_surface& surface() const;
+		void scroll_to(i_widget& aChild);
+	public:
 		virtual void layout_items_completed();
 	public:
 		virtual void resized();
@@ -59,30 +60,31 @@ namespace neogfx
 		virtual void paint_non_client(graphics_context& aGraphicsContext) const;
 	public:
 		virtual void mouse_wheel_scrolled(mouse_wheel aWheel, delta aDelta);
-		virtual void mouse_button_pressed(mouse_button aButton, const point& aPosition);
-		virtual void mouse_button_double_clicked(mouse_button aButton, const point& aPosition);
+		virtual void mouse_button_pressed(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers);
+		virtual void mouse_button_double_clicked(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers);
 		virtual void mouse_button_released(mouse_button aButton, const point& aPosition);
 		virtual void mouse_moved(const point& aPosition);
 		virtual void mouse_entered();
 		virtual void mouse_left();
 	public:
-		virtual void key_pressed(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers);
+		virtual bool key_pressed(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers);
 	public:
 		virtual const i_scrollbar& vertical_scrollbar() const;
 		virtual i_scrollbar& vertical_scrollbar();
 		virtual const i_scrollbar& horizontal_scrollbar() const;
 		virtual i_scrollbar& horizontal_scrollbar();
-	protected:
-		virtual void init();
 		virtual child_widget_scrolling_disposition_e scrolling_disposition() const;
 		virtual child_widget_scrolling_disposition_e scrolling_disposition(const i_widget& aChildWidget) const;
 	private:
 		virtual rect scrollbar_geometry(const i_units_context& aContext, const i_scrollbar& aScrollbar) const;
 		virtual void scrollbar_updated(const i_scrollbar& aScrollbar, i_scrollbar::update_reason_e aReason);
 		virtual colour scrollbar_colour(const i_scrollbar& aScrollbar) const;
+		virtual const i_surface& scrollbar_surface() const;
 	protected:
 		virtual void update_scrollbar_visibility();
 		virtual void update_scrollbar_visibility(usv_stage_e aStage);
+	protected:
+		void init();
 	private:
 		scrollbar iVerticalScrollbar;
 		scrollbar iHorizontalScrollbar;

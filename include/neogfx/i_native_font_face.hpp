@@ -43,11 +43,15 @@ namespace neogfx
 		virtual dimension horizontal_dpi() const = 0;
 		virtual dimension vertical_dpi() const = 0;
 		virtual dimension height() const = 0;
+		virtual dimension descender() const = 0;
+		virtual dimension underline_position() const = 0;
+		virtual dimension underline_thickness() const = 0;
 		virtual dimension line_spacing() const = 0;
-		virtual dimension kerning(uint32_t aFirstCodePoint, uint32_t aSecondCodePoint) const = 0;
+		virtual dimension kerning(uint32_t aLeftGlyphIndex, uint32_t aRightGlyphIndex) const = 0;
 		virtual i_native_font_face& fallback() const = 0;
 		virtual void* handle() const = 0;
 		virtual void* aux_handle() const = 0;
+		virtual uint32_t glyph_index(char32_t aCodePoint) const = 0;
 		virtual i_glyph_texture& glyph_texture(const glyph& aGlyph) const = 0;
 	};
 }

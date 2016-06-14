@@ -23,16 +23,6 @@
 
 namespace neogfx
 {
-	namespace
-	{
-		struct scoped_counter
-		{
-			uint32_t& iCounter;
-			scoped_counter(uint32_t& aCounter) : iCounter(aCounter) { ++iCounter; }
-			~scoped_counter() { --iCounter; }
-		};
-	}
-
 	item_view::item_view() :
 		scrollable_widget(),
 		iBatchUpdatesInProgress(0)
@@ -226,6 +216,13 @@ namespace neogfx
 		return presentation_model().item_at(vertical_scrollbar().position() + item_display_rect().height(), aGraphicsContext);
 	}
 
+	size_policy item_view::size_policy() const
+	{
+		if (has_size_policy())
+			return scrollable_widget::size_policy();
+		return size_policy::Expanding;
+	}
+
 	void item_view::paint(graphics_context& aGraphicsContext) const
 	{
 		scrollable_widget::paint(aGraphicsContext);
@@ -266,9 +263,9 @@ namespace neogfx
 			selection_model().set_current_index(item_model_index(0, 0));
 	}
 
-	void item_view::mouse_button_pressed(mouse_button aButton, const point& aPosition)
+	void item_view::mouse_button_pressed(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers)
 	{
-		scrollable_widget::mouse_button_pressed(aButton, aPosition);
+		scrollable_widget::mouse_button_pressed(aButton, aPosition, aKeyModifiers);
 		if (capturing() && aButton == mouse_button::Left && item_display_rect().contains(aPosition))
 		{
 			auto item = item_at(aPosition);
@@ -284,13 +281,9 @@ namespace neogfx
 		}
 	}
 
-	void item_view::key_pressed(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers)
+	bool item_view::key_pressed(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers)
 	{
-		if (model().rows() == 0)
-		{
-			scrollable_widget::key_pressed(aScanCode, aKeyCode, aKeyModifiers);
-			return;
-		}
+		bool handled = true;
 		if (selection_model().has_current_index())
 		{
 			item_model_index currentIndex = selection_model().current_index();
@@ -345,7 +338,7 @@ namespace neogfx
 					newIndex = item_model_index(model().rows() - 1, model().columns() - 1);
 				break;
 			default:
-				scrollable_widget::key_pressed(aScanCode, aKeyCode, aKeyModifiers);
+				handled = scrollable_widget::key_pressed(aScanCode, aKeyCode, aKeyModifiers);
 				break;
 			}
 			selection_model().set_current_index(newIndex);
@@ -365,10 +358,11 @@ namespace neogfx
 				selection_model().set_current_index(item_model_index(0, 0));
 				break;
 			default:
-				scrollable_widget::key_pressed(aScanCode, aKeyCode, aKeyModifiers);
+				handled = scrollable_widget::key_pressed(aScanCode, aKeyCode, aKeyModifiers);
 				break;
 			}
 		}
+		return handled;
 	}
 
 	item_view::child_widget_scrolling_disposition_e item_view::scrolling_disposition() const
@@ -420,7 +414,7 @@ namespace neogfx
 		}
 	}
 
-	void item_view::column_info_changed(const i_item_model& aModel, item_model_index::value_type aColumnIndex)
+	void item_view::column_info_changed(const i_item_model&, item_model_index::value_type)
 	{
 		if (iBatchUpdatesInProgress)
 			return;
@@ -428,7 +422,7 @@ namespace neogfx
 		update();
 	}
 
-	void item_view::item_added(const i_item_model& aModel, const item_model_index& aItemIndex)
+	void item_view::item_added(const i_item_model&, const item_model_index&)
 	{
 		if (iBatchUpdatesInProgress)
 			return;
@@ -436,7 +430,7 @@ namespace neogfx
 		update();
 	}
 
-	void item_view::item_changed(const i_item_model& aModel, const item_model_index& aItemIndex)
+	void item_view::item_changed(const i_item_model&, const item_model_index&)
 	{
 		if (iBatchUpdatesInProgress)
 			return;
@@ -444,7 +438,7 @@ namespace neogfx
 		update();
 	}
 
-	void item_view::item_removed(const i_item_model& aModel, const item_model_index& aItemIndex)
+	void item_view::item_removed(const i_item_model&, const item_model_index&)
 	{
 		if (iBatchUpdatesInProgress)
 			return;
@@ -452,17 +446,17 @@ namespace neogfx
 		update();
 	}
 
-	void item_view::items_sorted(const i_item_model& aModel)
+	void item_view::items_sorted(const i_item_model&)
 	{
 		update();
 	}
 
-	void item_view::model_destroyed(const i_item_model& aModel)
+	void item_view::model_destroyed(const i_item_model&)
 	{
 		iModel.reset();
 	}
 
-	void item_view::current_index_changed(const i_item_selection_model& aSelectionModel, const optional_item_model_index& aCurrentIndex, const optional_item_model_index& aPreviousIndex)
+	void item_view::current_index_changed(const i_item_selection_model&, const optional_item_model_index& aCurrentIndex, const optional_item_model_index&)
 	{
 		if (aCurrentIndex != boost::none)
 			make_visible(*aCurrentIndex);
@@ -489,7 +483,7 @@ namespace neogfx
 		}
 	}
 
-	void item_view::header_view_updated(header_view& aHeaderView)
+	void item_view::header_view_updated(header_view&)
 	{
 		update_scrollbar_visibility();
 		update();
@@ -511,7 +505,7 @@ namespace neogfx
 			if (col != 0)
 				x += cell_spacing().cx;
 			if (col == aItemIndex.column())
-				return rect(point(x - horizontal_scrollbar().position(), y - vertical_scrollbar().position() + item_display_rect().top()), size(column_width(col), h));
+				return rect(client_rect(false).top_left() + point(x - horizontal_scrollbar().position(), y - vertical_scrollbar().position() + item_display_rect().top()), size(column_width(col), h));
 			x += column_width(col);
 		}
 		return rect{};

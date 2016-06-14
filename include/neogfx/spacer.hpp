@@ -53,22 +53,28 @@ namespace neogfx
 		virtual void set_parent(i_layout& aParent);
 		virtual expansion_policy_e expansion_policy() const;
 		virtual void set_expansion_policy(expansion_policy_e aExpansionPolicy);
+	public:
+		virtual point position() const;
+		virtual void set_position(const point& aPosition);
+		virtual size extents() const;
+		virtual void set_extents(const size& aExtents);
+		virtual bool has_size_policy() const;
+		virtual neogfx::size_policy size_policy() const;
+		using i_geometry::set_size_policy;
+		virtual void set_size_policy(const optional_size_policy& aSizePolicy, bool aUpdateLayout = true);
 		virtual bool has_weight() const;
 		virtual size weight() const;
-		virtual void set_weight(const optional_size& aWeight);
-	public:
+		virtual void set_weight(const optional_size& aWeight, bool aUpdateLayout = true);
 		virtual bool has_minimum_size() const;
-		virtual size minimum_size() const;
+		virtual size minimum_size(const optional_size& aAvailableSpace = optional_size()) const;
 		virtual void set_minimum_size(const optional_size& aMinimumSize, bool aUpdateLayout = true);
 		virtual bool has_maximum_size() const;
-		virtual size maximum_size() const;
+		virtual size maximum_size(const optional_size& aAvailableSpace = optional_size()) const;
 		virtual void set_maximum_size(const optional_size& aMaximumSize, bool aUpdateLayout = true);
-		virtual bool is_fixed_size() const;
-		virtual void set_fixed_size(const optional_size& aFixedSize, bool aUpdateLayout = true);
 	public:
 		virtual neogfx::margins margins() const;
 		virtual bool has_margins() const;
-		virtual void set_margins(const optional_margins& aMargins);
+		virtual void set_margins(const optional_margins& aMargins, bool aUpdateLayout = true);
 	public:
 		virtual const i_device_metrics& device_metrics() const;
 		virtual units_e units() const;
@@ -77,6 +83,9 @@ namespace neogfx
 		i_layout* iParent;
 		device_metrics_forwarder iDeviceMetricsForwarder;
 		units_context iUnitsContext;
+		point iPosition;
+		size iExtents;
+		optional_size_policy iSizePolicy;
 		optional_size iMinimumSize;
 		optional_size iMaximumSize;
 		optional_margins iMargins;

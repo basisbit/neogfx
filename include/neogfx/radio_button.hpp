@@ -21,7 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "neogfx.hpp"
 #include "button.hpp"
-#include "spacer.hpp"
 
 namespace neogfx
 {
@@ -36,8 +35,8 @@ namespace neogfx
 		public:
 			disc(radio_button& aParent);
 		public:
-			virtual size minimum_size() const;
-			virtual size maximum_size() const;
+			virtual size minimum_size(const optional_size& aAvailableSpace = optional_size()) const;
+			virtual size maximum_size(const optional_size& aAvailableSpace = optional_size()) const;
 		public:
 			virtual void paint(graphics_context& aGraphicsContext) const;
 		};
@@ -49,16 +48,17 @@ namespace neogfx
 		bool is_on() const;
 		bool is_off() const;
 		void set_on();
+	public:
+		virtual neogfx::size_policy size_policy() const;
 	protected:
 		virtual void paint(graphics_context& aGraphicsContext) const;
-		virtual void handle_pressed();
+		virtual void handle_clicked();
 	protected:
-		const radio_button* next_radio_button() const;
-		radio_button* next_radio_button();
-		void set_on_state(bool aOnState);
-		bool any_siblings_on() const;
+		virtual const radio_button* next_radio_button() const;
+		virtual radio_button* next_radio_button();
+		virtual bool any_siblings_on() const;
+		virtual bool set_checked_state(const boost::optional<bool>& aCheckedState);
 	private:
 		disc iDisc;
-		bool iOnState;
 	};
 }

@@ -44,11 +44,15 @@ namespace neogfx
 			virtual dimension horizontal_dpi() const { return iFontFace.horizontal_dpi(); }
 			virtual dimension vertical_dpi() const { return iFontFace.vertical_dpi(); }
 			virtual dimension height() const { return iFontFace.height(); }
+			virtual dimension descender() const { return iFontFace.descender(); }
+			virtual dimension underline_position() const { return iFontFace.underline_position(); }
+			virtual dimension underline_thickness() const { return iFontFace.underline_thickness(); }
 			virtual dimension line_spacing() const { return iFontFace.line_spacing(); }
-			virtual dimension kerning(uint32_t aFirstCodePoint, uint32_t aSecondCodePoint) const { return iFontFace.kerning(aFirstCodePoint, aSecondCodePoint); }
+			virtual dimension kerning(uint32_t aLeftGlyphIndex, uint32_t aRightGlyphIndex) const { return iFontFace.kerning(aLeftGlyphIndex, aRightGlyphIndex); }
 			virtual i_native_font_face& fallback() const { return iFontFace.fallback(); }
 			virtual void* handle() const { return iFontFace.handle(); }
 			virtual void* aux_handle() const { return iFontFace.aux_handle(); }
+			virtual uint32_t glyph_index(char32_t aCodePoint) const { return iFontFace.glyph_index(aCodePoint); }
 			virtual i_glyph_texture& glyph_texture(const glyph& aGlyph) const { return iFontFace.glyph_texture(aGlyph); }
 		private:
 			i_native_font_face& iFontFace;
@@ -79,7 +83,7 @@ namespace neogfx
 					}
 					::RegCloseKey(hkeyDefaultFont);
 				}
-				return font_info(neolib::wide_to_utf8(defaultFontFaceName), font::Normal, 8);
+				return font_info(neolib::utf16_to_utf8(reinterpret_cast<const char16_t*>(defaultFontFaceName.c_str())), font::Normal, 8);
 #else
 				throw std::logic_error("neogfx::detail::platform_specific::default_system_font_info: Unknown system");
 #endif
@@ -130,8 +134,11 @@ namespace neogfx
 				continue;
 			try
 			{
-				auto font = iNativeFonts.emplace(iNativeFonts.end(), iRenderingEngine, iFontLib, file->path().string());
-				iFontFamilies[neolib::make_ci_string(font->family_name())].push_back(font);
+				if (is_font_file(file->path().string()))
+				{
+					auto font = iNativeFonts.emplace(iNativeFonts.end(), iRenderingEngine, iFontLib, file->path().string());
+					iFontFamilies[neolib::make_ci_string(font->family_name())].push_back(font);
+				}
 			}
 			catch (native_font::failed_to_load_font&)
 			{
@@ -205,34 +212,67 @@ namespace neogfx
 		return std::unique_ptr<i_native_font_face>(new detail::native_font_face_wrapper(aFont.create_face(aStyleName, aSize, aDevice)));
 	}
 
-	std::unique_ptr<i_native_font_face> font_manager::load_font_from_file(const std::string aFileName, const i_device_resolution& aDevice)
+	bool font_manager::is_font_file(const std::string& aFileName) const
 	{
-		throw std::logic_error("neogfx::font_manager::load_font_from_file function overload not yet implemented");
+		FT_Face face;
+		FT_Error error = FT_New_Face(iFontLib, aFileName.c_str(), 0, &face);
+		if (error)
+			return false;
+		FT_Done_Face(face);
+		return true;
 	}
 
-	std::unique_ptr<i_native_font_face> font_manager::load_font_from_file(const std::string aFileName, font::style_e aStyle, font::point_size aSize, const i_device_resolution& aDevice)
+	std::unique_ptr<i_native_font_face> font_manager::load_font_from_file(const std::string& aFileName, const i_device_resolution& aDevice)
 	{
 		throw std::logic_error("neogfx::font_manager::load_font_from_file function overload not yet implemented");
+		(void)aFileName;
+		(void)aDevice;
 	}
 
-	std::unique_ptr<i_native_font_face> font_manager::load_font_from_file(const std::string aFileName, const std::string& aStyleName, font::point_size aSize, const i_device_resolution& aDevice)
+	std::unique_ptr<i_native_font_face> font_manager::load_font_from_file(const std::string& aFileName, font::style_e aStyle, font::point_size aSize, const i_device_resolution& aDevice)
 	{
 		throw std::logic_error("neogfx::font_manager::load_font_from_file function overload not yet implemented");
+		(void)aFileName;
+		(void)aStyle;
+		(void)aSize;
+		(void)aDevice;
+	}
+
+	std::unique_ptr<i_native_font_face> font_manager::load_font_from_file(const std::string& aFileName, const std::string& aStyleName, font::point_size aSize, const i_device_resolution& aDevice)
+	{
+		throw std::logic_error("neogfx::font_manager::load_font_from_file function overload not yet implemented");
+		(void)aFileName;
+		(void)aStyleName;
+		(void)aSize;
+		(void)aDevice;
 	}
 
 	std::unique_ptr<i_native_font_face> font_manager::load_font_from_memory(const void* aData, std::size_t aSizeInBytes, const i_device_resolution& aDevice)
 	{
 		throw std::logic_error("neogfx::font_manager::load_font_from_memory function overload not yet implemented");
+		(void)aData;
+		(void)aSizeInBytes;
+		(void)aDevice;
 	}
 
 	std::unique_ptr<i_native_font_face> font_manager::load_font_from_memory(const void* aData, std::size_t aSizeInBytes, font::style_e aStyle, font::point_size aSize, const i_device_resolution& aDevice)
 	{
 		throw std::logic_error("neogfx::font_manager::load_font_from_memory function overload not yet implemented");
+		(void)aData;
+		(void)aSizeInBytes;
+		(void)aStyle;
+		(void)aSize;
+		(void)aDevice;
 	}
 
 	std::unique_ptr<i_native_font_face> font_manager::load_font_from_memory(const void* aData, std::size_t aSizeInBytes, const std::string& aStyleName, font::point_size aSize, const i_device_resolution& aDevice)
 	{
 		throw std::logic_error("neogfx::font_manager::load_font_from_memory function overload not yet implemented");
+		(void)aData;
+		(void)aSizeInBytes;
+		(void)aStyleName;
+		(void)aSize;
+		(void)aDevice;
 	}
 
 	i_native_font& font_manager::find_font(const std::string& aFamilyName, const std::string& aStyleName, font::point_size aSize)
@@ -270,7 +310,7 @@ namespace neogfx
 		}
 	}
 
-	i_native_font& font_manager::find_best_font(const std::string& aFamilyName, font::style_e aStyle, font::point_size aSize)
+	i_native_font& font_manager::find_best_font(const std::string& aFamilyName, font::style_e aStyle, font::point_size)
 	{
 		auto family = iFontFamilies.find(neolib::make_ci_string(aFamilyName));
 		if (family == iFontFamilies.end())

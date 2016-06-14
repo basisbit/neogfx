@@ -19,15 +19,14 @@
 
 #include "neogfx.hpp"
 #include "surface_manager.hpp"
-#include <SDL_messagebox.h>
 #include <neolib/string_utils.hpp>
 #include "i_native_surface.hpp"
 #include "i_native_window.hpp"
 
 namespace neogfx
 {
-	surface_manager::surface_manager(i_rendering_engine& aRenderingEngine) :
-		iRenderingEngine(aRenderingEngine)
+	surface_manager::surface_manager(i_basic_services& aBasicServices, i_rendering_engine& aRenderingEngine) :
+		iBasicServices(aBasicServices), iRenderingEngine(aRenderingEngine), iRenderingSurfaces(false)
 	{
 	}
 
@@ -38,13 +37,37 @@ namespace neogfx
 	
 	void surface_manager::remove_surface(i_surface& aSurface)
 	{
-		iSurfaces.erase(iSurfaces.find(&aSurface));
+		auto existingSurface = iSurfaces.find(&aSurface);
+		if (existingSurface != iSurfaces.end())
+		{
+			for (auto s = iSurfaces.begin(); s != iSurfaces.end();)
+			{
+				if (aSurface.is_owner_of(**s))
+				{
+					auto& childSurface = **s;
+					iSurfaces.erase(s);
+					childSurface.close();
+					s = iSurfaces.begin();
+				}
+				else
+					++s;
+			}
+			iSurfaces.erase(existingSurface);
+		}	
 	}
 
-	i_surface& surface_manager::surface_from_handle(void* aHandle)
+	bool surface_manager::is_surface_attached(void* aNativeSurfaceHandle) const
 	{
 		for (auto& s : iSurfaces)
-			if (s->native_surface().handle() == aHandle)
+			if (s->native_surface().handle() == aNativeSurfaceHandle)
+				return true;
+		return false;
+	}
+
+	i_surface& surface_manager::attached_surface(void* aNativeSurfaceHandle)
+	{
+		for (auto& s : iSurfaces)
+			if (s->native_surface().handle() == aNativeSurfaceHandle)
 				return *s;
 		throw surface_not_found();
 	}
@@ -58,14 +81,21 @@ namespace neogfx
 	{
 		return **std::next(iSurfaces.begin(), aIndex);
 	}
-	
+
+	bool surface_manager::any_strong_surfaces() const
+	{
+		for (auto& s : iSurfaces)
+			if (!s->is_weak())
+				return true;
+		return false;
+	}
+		
 	bool surface_manager::process_events(bool& aLastWindowClosed)
 	{
-		bool hadWindows = !iSurfaces.empty();
+		bool hadStrong = any_strong_surfaces();
 		bool handledEvents = iRenderingEngine.process_events();
-		if (hadWindows && iSurfaces.empty())
+		if (hadStrong && !any_strong_surfaces())
 			aLastWindowClosed = true;
-		clear_rendering_flags();
 		return handledEvents;
 	}
 
@@ -77,15 +107,18 @@ namespace neogfx
 
 	void surface_manager::invalidate_surfaces()
 	{
-		for (auto i = iSurfaces.begin(); i != iSurfaces.end(); ++i)
-			(*i)->invalidate_surface(rect(point{}, (*i)->surface_size()), false);
+		for (auto& s : iSurfaces)
+			s->invalidate_surface(rect(point{}, s->surface_size()), false);
 	}
 
-	void surface_manager::clear_rendering_flags()
+	void surface_manager::render_surfaces()
 	{
+		if (iRenderingSurfaces || iRenderingEngine.creating_window())
+			return;
+		iRenderingSurfaces = true;
 		for (auto& s : iSurfaces)
-			if (!s->destroyed())
-				s->native_surface().clear_rendering_flag();
+			s->render_surface();
+		iRenderingSurfaces = false;
 	}
 
 	void surface_manager::display_error_message(const std::string& aTitle, const std::string& aMessage) const
@@ -94,17 +127,52 @@ namespace neogfx
 		{
 			if ((*i)->destroyed())
 				continue;
-			if ((*i)->surface_type() == i_surface::SurfaceTypeWindow && static_cast<i_native_window&>((*i)->native_surface()).is_active())
+			if ((*i)->surface_type() == surface_type::Window && static_cast<i_native_window&>((*i)->native_surface()).is_active())
 			{
 				display_error_message((*i)->native_surface(), aTitle, aMessage);
 				return;
 			}
 		}
-		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, aTitle.c_str(), aMessage.c_str(), NULL);
+		iBasicServices.display_error_dialog(aTitle.c_str(), aMessage.c_str(), 0);
 	}
 
 	void surface_manager::display_error_message(const i_native_surface& aParent, const std::string& aTitle, const std::string& aMessage) const
 	{
-		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, aTitle.c_str(), aMessage.c_str(), static_cast<SDL_Window*>(aParent.handle()));
+		iBasicServices.display_error_dialog(aTitle.c_str(), aMessage.c_str(), aParent.handle());
+	}
+
+	uint32_t surface_manager::display_count() const
+	{
+		return iBasicServices.display_count();
+	}
+
+	rect surface_manager::desktop_rect(uint32_t aDisplayIndex) const
+	{
+		return iBasicServices.desktop_rect(aDisplayIndex);
+	}
+
+	rect surface_manager::desktop_rect(const i_surface& aSurface) const
+	{
+#ifdef WIN32
+		HMONITOR monitor = MonitorFromWindow(reinterpret_cast<HWND>(aSurface.native_surface().native_handle()), MONITOR_DEFAULTTONEAREST);
+		MONITORINFOEX mi;
+		mi.cbSize = sizeof(mi);
+		GetMonitorInfo(monitor, &mi);
+		return basic_rect<LONG>{ basic_point<LONG>{ mi.rcWork.left, mi.rcWork.top }, basic_size<LONG>{ mi.rcWork.right - mi.rcWork.left, mi.rcWork.bottom - mi.rcWork.top } };
+#else
+		/* todo */
+		rect rectSurface{ aSurface.surface_position(), aSurface.surface_size() };
+		std::multimap<double, uint32_t> matches;
+		for (uint32_t i = 0; i < display_count(); ++i)
+		{
+			rect rectDisplay = desktop_rect(i);
+			rect rectIntersection = rectDisplay.intersection(rectSurface);
+			if (!rectIntersection.empty())
+				matches[rectIntersection.width() * rectIntersection.height()] = i;
+		}
+		if (matches.empty())
+			return desktop_rect(0);
+		return desktop_rect(matches.rbegin()->second);
+#endif
 	}
 }

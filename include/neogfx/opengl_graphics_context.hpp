@@ -31,7 +31,7 @@
 #else
 #include <hb.h>
 #include <hb-ft.h>
-#include <hb-unicode.h>
+#include <hb-ucdn\ucdn.h>
 #endif
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -48,14 +48,14 @@ namespace neogfx
 	class opengl_graphics_context : public i_native_graphics_context
 	{
 	private:
-		class disable_anti_alias
+		class scoped_anti_alias
 		{
 		public:
-			disable_anti_alias(opengl_graphics_context& aParent) : iParent(aParent), iOldSmoothingMode(aParent.smoothing_mode())
+			scoped_anti_alias(opengl_graphics_context& aParent, smoothing_mode_e aNewSmoothingMode) : iParent(aParent), iOldSmoothingMode(aParent.smoothing_mode())
 			{
-				iParent.set_smoothing_mode(SmoothingModeNone);
+				iParent.set_smoothing_mode(aNewSmoothingMode);
 			}
-			~disable_anti_alias()
+			~scoped_anti_alias()
 			{
 				iParent.set_smoothing_mode(iOldSmoothingMode);
 			}
@@ -63,14 +63,27 @@ namespace neogfx
 			opengl_graphics_context& iParent;
 			smoothing_mode_e iOldSmoothingMode;
 		};
+		class disable_anti_alias : public scoped_anti_alias
+		{
+		public:
+			disable_anti_alias(opengl_graphics_context& aParent) : scoped_anti_alias(aParent, SmoothingModeNone)
+			{
+			}
+		};
 		typedef std::array<double, 3> vertex;
 	public:
-		opengl_graphics_context(i_rendering_engine& aRenderingEngine);
+		opengl_graphics_context(i_rendering_engine& aRenderingEngine, const i_native_surface& aSurface);
+		opengl_graphics_context(i_rendering_engine& aRenderingEngine, const i_native_surface& aSurface, const i_widget& aWidget);
 		opengl_graphics_context(const opengl_graphics_context& aOther);
 		~opengl_graphics_context();
 	public:
+		virtual const i_native_surface& surface() const;
 		virtual rect rendering_area(bool aConsiderScissor = true) const = 0;
 	public:
+		virtual neogfx::logical_coordinate_system logical_coordinate_system() const;
+		virtual void set_logical_coordinate_system(neogfx::logical_coordinate_system aSystem);
+		virtual const vector4& logical_coordinates() const;
+		virtual void set_logical_coordinates(const vector4& aCoordinates) const;
 		virtual void flush();
 		virtual void scissor_on(const rect& aRect);
 		virtual void scissor_off();
@@ -80,6 +93,8 @@ namespace neogfx
 		virtual void reset_clip();
 		virtual smoothing_mode_e smoothing_mode() const;
 		virtual smoothing_mode_e set_smoothing_mode(smoothing_mode_e aSmoothingMode);
+		virtual bool monochrome() const;
+		virtual void set_monochrome(bool aMonochrome);
 		virtual void push_logical_operation(logical_operation_e aLogicalOperation);
 		virtual void pop_logical_operation();
 		virtual void line_stipple_on(uint32_t aFactor, uint16_t aPattern);
@@ -89,24 +104,42 @@ namespace neogfx
 		virtual void draw_pixel(const point& aPoint, const colour& aColour);
 		virtual void draw_line(const point& aFrom, const point& aTo, const pen& aPen);
 		virtual void draw_rect(const rect& aRect, const pen& aPen);
+		virtual void draw_rounded_rect(const rect& aRect, dimension aRadius, const pen& aPen);
 		virtual void draw_circle(const point& aCentre, dimension aRadius, const pen& aPen);
+		virtual void draw_arc(const point& aCentre, dimension aRadius, angle aStartAngle, angle aEndAngle, const pen& aPen);
 		virtual void draw_path(const path& aPath, const pen& aPen);
-		virtual void fill_solid_rect(const rect& aRect, const colour& aColour);
-		virtual void fill_gradient_rect(const rect& aRect, const gradient& aGradient);	
-		virtual void fill_solid_circle(const point& aCentre, dimension aRadius, const colour& aColour);
+		virtual void fill_rect(const rect& aRect, const colour& aColour);
+		virtual void fill_rect(const rect& aRect, const gradient& aGradient);	
+		virtual void fill_rounded_rect(const rect& aRect, dimension aRadius, const colour& aColour);
+		virtual void fill_rounded_rect(const rect& aRect, dimension aRadius, const gradient& aGradient);
+		virtual void fill_circle(const point& aCentre, dimension aRadius, const colour& aColour);
+		virtual void fill_arc(const point& aCentre, dimension aRadius, angle aStartAngle, angle aEndAngle, const colour& aColour);
+		virtual void fill_shape(const point& aCentre, const vertex_list2& aVertices, const colour& aColour);
 		virtual void fill_and_draw_path(const path& aPath, const colour& aFillColour, const pen& aPen);
-		virtual glyph_text to_glyph_text(text::const_iterator aTextBegin, text::const_iterator aTextEnd, const font& aFont) const;
+		virtual glyph_text to_glyph_text(string::const_iterator aTextBegin, string::const_iterator aTextEnd, const font& aFont) const;
+		virtual glyph_text to_glyph_text(string::const_iterator aTextBegin, string::const_iterator aTextEnd, std::function<font(std::string::size_type)> aFontSelector) const;
+		virtual void set_mnemonic(bool aShowMnemonics, char aMnemonicPrefix = '&');
+		virtual void unset_mnemonic();
+		virtual bool mnemonics_shown() const;
 		virtual void begin_drawing_glyphs();
 		virtual void draw_glyph(const point& aPoint, const glyph& aGlyph, const font& aFont, const colour& aColour);
+//		virtual void is_emoji(const std::u32string& aEmojiText) const;
+//		virtual void draw_emoji(const point& aPoint, const std::u32string& aEmojiText, const font& aFont);
 		virtual void end_drawing_glyphs();
+		virtual void draw_texture(const texture_map& aTextureMap, const i_texture& aTexture, const rect& aTextureRect, const optional_colour& aColour);
 	private:
 		void apply_scissor();
 		void apply_logical_operation();
 		vertex to_shader_vertex(const point& aPoint) const;
-		glyph_text::container to_glyph_text_impl(text::const_iterator aTextBegin, text::const_iterator aTextEnd, const font& aFont, bool& aFallbackFontNeeded) const;
+		glyph_text::container to_glyph_text_impl(string::const_iterator aTextBegin, string::const_iterator aTextEnd, std::function<font(std::string::size_type)> aFontSelector, bool& aFallbackFontNeeded) const;
 	private:
 		i_rendering_engine& iRenderingEngine;
+		const i_native_surface& iSurface;
+		neogfx::logical_coordinate_system iSavedCoordinateSystem;
+		neogfx::logical_coordinate_system iLogicalCoordinateSystem;
+		mutable vector4 iLogicalCoordinates;
 		smoothing_mode_e iSmoothingMode; 
+		bool iMonochrome;
 		std::vector<logical_operation_e> iLogicalOperationStack;
 		uint32_t iClipCounter;
 		std::vector<rect> iScissorRects;
@@ -115,11 +148,19 @@ namespace neogfx
 		mutable std::vector<GLshort> iIndices;
 		mutable std::vector<std::array<GLdouble, 4>> iColours;
 		mutable std::vector<std::array<GLdouble, 2>> iShifts;
-		typedef std::vector<std::pair<std::string::size_type, std::u32string::size_type>> cluster_map_t;
+		struct cluster
+		{
+			std::string::size_type from;
+			glyph::flags_e flags;
+		};
+		typedef std::vector<cluster> cluster_map_t;
 		mutable cluster_map_t iClusterMap;
 		mutable std::vector<text_direction> iTextDirections;
-		mutable std::vector<std::tuple<uint32_t*, uint32_t*, text_direction, hb_script_t>> iRuns;
+		mutable std::u32string iCodePointsBuffer;
+		mutable std::vector<std::tuple<const char32_t*, const char32_t*, text_direction, hb_script_t>> iRuns;
 		GLint iPreviousTexture;
 		GLuint iActiveGlyphTexture;
+		bool iLineStippleActive;
+		boost::optional<std::pair<bool, char>> iMnemonic;
 	};
 }

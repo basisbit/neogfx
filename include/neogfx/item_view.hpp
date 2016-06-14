@@ -72,14 +72,16 @@ namespace neogfx
 		std::pair<item_model_index::value_type, coordinate> first_visible_item(graphics_context& aGraphicsContext) const;
 		std::pair<item_model_index::value_type, coordinate> last_visible_item(graphics_context& aGraphicsContext) const;
 	protected:
+		virtual neogfx::size_policy size_policy() const;
+	protected:
 		virtual void paint(graphics_context& aGraphicsContext) const;
 	protected:
 		virtual void released();
 		virtual void focus_gained();
 	protected:
-		virtual void mouse_button_pressed(mouse_button aButton, const point& aPosition);
+		virtual void mouse_button_pressed(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers);
 	protected:
-		virtual void key_pressed(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers);
+		virtual bool key_pressed(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers);
 	protected:
 		using scrollable_widget::scrolling_disposition;
 		virtual child_widget_scrolling_disposition_e scrolling_disposition() const;
@@ -93,13 +95,13 @@ namespace neogfx
 		virtual void items_sorted(const i_item_model& aModel);
 		virtual void model_destroyed(const i_item_model& aModel);
 	protected:
-		virtual void item_model_added(const i_item_selection_model& aSelectionModel, i_item_model& aNewItemModel) {}
-		virtual void item_model_changed(const i_item_selection_model& aSelectionModel, i_item_model& aNewItemModel, i_item_model& aOldItemModel) {}
-		virtual void item_model_removed(const i_item_selection_model& aSelectionModel, i_item_model& aOldItemModel) {}
-		virtual void selection_mode_changed(const i_item_selection_model& aSelectionModel, item_selection_mode aNewMode) {}
+		virtual void item_model_added(const i_item_selection_model& aSelectionModel, i_item_model& aNewItemModel) { (void)aSelectionModel; (void)aNewItemModel; }
+		virtual void item_model_changed(const i_item_selection_model& aSelectionModel, i_item_model& aNewItemModel, i_item_model& aOldItemModel) { (void)aSelectionModel; (void)aNewItemModel; (void)aOldItemModel; }
+		virtual void item_model_removed(const i_item_selection_model& aSelectionModel, i_item_model& aOldItemModel) { (void)aSelectionModel; (void)aOldItemModel; }
+		virtual void selection_mode_changed(const i_item_selection_model& aSelectionModel, item_selection_mode aNewMode) { (void)aSelectionModel; (void)aNewMode; }
 		virtual void current_index_changed(const i_item_selection_model& aSelectionModel, const optional_item_model_index& aCurrentIndex, const optional_item_model_index& aPreviousIndex);
-		virtual void selection_changed(const i_item_selection_model& aSelectionModel, const item_selection& aCurrentSelection, const item_selection& aPreviousSelection) {}
-		virtual void selection_model_destroyed(const i_item_selection_model& aSelectionModel) {}
+		virtual void selection_changed(const i_item_selection_model& aSelectionModel, const item_selection& aCurrentSelection, const item_selection& aPreviousSelection) { (void)aSelectionModel; (void)aCurrentSelection; (void)aPreviousSelection; }
+		virtual void selection_model_destroyed(const i_item_selection_model& aSelectionModel) { (void)aSelectionModel; }
 	public:
 		rect cell_rect(const item_model_index& aItemIndex) const;
 		optional_item_model_index item_at(const point& aPosition) const;

@@ -20,12 +20,14 @@
 #pragma once
 
 #include "neogfx.hpp"
+#include <unordered_set>
+#include <neolib/destroyable.hpp>
 #include <neolib/timer.hpp>
 #include "i_widget.hpp"
 
 namespace neogfx
 {
-	class widget : public i_widget
+	class widget : public i_widget, protected neolib::destroyable
 	{
 	private:
 		class device_metrics_forwarder : public i_device_metrics
@@ -53,13 +55,15 @@ namespace neogfx
 	public:
 		virtual bool is_root() const;
 		virtual bool has_parent() const;
-		virtual void set_parent(i_widget& aParent);
 		virtual const i_widget& parent() const;
 		virtual i_widget& parent();
-		virtual const i_widget& ultimate_ancestor() const;
-		virtual i_widget& ultimate_ancestor();
-		virtual bool is_ancestor(const i_widget& aWidget) const;
-		virtual bool is_sibling(const i_widget& aWidget) const;
+		virtual void set_parent(i_widget& aParent);
+		virtual void parent_changed();
+		virtual const i_widget& ultimate_ancestor(bool aSameSurface = true) const;
+		virtual i_widget& ultimate_ancestor(bool aSameSurface = true);
+		virtual bool is_ancestor_of(const i_widget& aWidget, bool aSameSurface = true) const;
+		virtual bool is_descendent_of(const i_widget& aWidget, bool aSameSurface = true) const;
+		virtual bool is_sibling_of(const i_widget& aWidget) const;
 		virtual i_widget& link_before() const;
 		virtual void set_link_before(i_widget& aWidget);
 		virtual void set_link_before_ptr(i_widget& aWidget);
@@ -70,6 +74,7 @@ namespace neogfx
 		virtual void add_widget(i_widget& aWidget);
 		virtual void add_widget(std::shared_ptr<i_widget> aWidget);
 		virtual void remove_widget(i_widget& aWidget);
+		virtual void remove_widgets();
 		virtual const widget_list& children() const;
 		virtual bool has_surface() const;
 		virtual const i_surface& surface() const;
@@ -85,36 +90,46 @@ namespace neogfx
 		virtual i_widget& managing_layout();
 		virtual bool is_managing_layout() const;
 		virtual void layout_items(bool aDefer = false);
+		virtual void layout_items_started();
+		virtual bool layout_items_in_progress() const;
 		virtual void layout_items_completed();
 	public:
+		virtual neogfx::logical_coordinate_system logical_coordinate_system() const;
 		virtual point position() const;
+		virtual void set_position(const point& aPosition);
 		virtual point origin(bool aNonClient = false) const;
 		virtual void move(const point& aPosition);
 		virtual void moved();
 		virtual size extents() const;
+		virtual void set_extents(const size& aSize);
 		virtual void resize(const size& aSize);
 		virtual void resized();
 		virtual rect window_rect() const;
 		virtual rect client_rect(bool aIncludeMargins = true) const;
 		virtual i_widget& widget_at(const point& aPosition);
+	public:
+		virtual bool has_size_policy() const;
+		virtual neogfx::size_policy size_policy() const;
+		virtual void set_size_policy(const optional_size_policy& aSizePolicy, bool aUpdateLayout = true);
+		virtual bool has_weight() const;
+		virtual size weight() const;
+		virtual void set_weight(const optional_size& aWeight, bool aUpdateLayout = true);
 		virtual bool has_minimum_size() const;
-		virtual size minimum_size() const;
+		virtual size minimum_size(const optional_size& aAvailableSpace = optional_size()) const;
 		virtual void set_minimum_size(const optional_size& aMinimumSize, bool aUpdateLayout = true);
 		virtual bool has_maximum_size() const;
-		virtual size maximum_size() const;
+		virtual size maximum_size(const optional_size& aAvailableSpace = optional_size()) const;
 		virtual void set_maximum_size(const optional_size& aMaximumSize, bool aUpdateLayout = true);
-		virtual bool is_fixed_size() const;
-		virtual void set_fixed_size(const optional_size& aFixedSize, bool aUpdateLayout = true);
 		virtual bool has_margins() const;
 		virtual neogfx::margins margins() const;
-		virtual void set_margins(const optional_margins& aMargins);
-		virtual size size_hint() const;
+		virtual void set_margins(const optional_margins& aMargins, bool aUpdateLayout = true);
 	public:
 		virtual void update(bool aIncludeNonClient = false);
 		virtual void update(const rect& aUpdateRect);
 		virtual bool requires_update() const;
 		virtual rect update_rect() const;
 		virtual rect default_clip_rect(bool aIncludeNonClient = false) const;
+		virtual bool ready_to_render() const;
 		virtual void render(graphics_context& aGraphicsContext) const;
 		virtual bool transparent_background() const;
 		virtual void paint_non_client(graphics_context& aGraphicsContext) const;
@@ -132,12 +147,16 @@ namespace neogfx
 		virtual void set_font(const optional_font& aFont);
 	public:
 		virtual bool visible() const;
+		virtual bool effectively_visible() const;
 		virtual bool hidden() const;
+		virtual bool effectively_hidden() const;
 		virtual void show(bool aVisible);
 		virtual void show();
 		virtual void hide();
 		virtual bool enabled() const;
+		virtual bool effectively_enabled() const;
 		virtual bool disabled() const;
+		virtual bool effectively_disabled() const;
 		virtual void enable(bool aEnable);
 		virtual void enable();
 		virtual void disable();
@@ -158,22 +177,29 @@ namespace neogfx
 		virtual bool ignore_mouse_events() const;
 		virtual void set_ignore_mouse_events(bool aIgnoreMouseEvents);
 		virtual void mouse_wheel_scrolled(mouse_wheel aWheel, delta aDelta);
-		virtual void mouse_button_pressed(mouse_button aButton, const point& aPosition);
-		virtual void mouse_button_double_clicked(mouse_button aButton, const point& aPosition);
+		virtual void mouse_button_pressed(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers);
+		virtual void mouse_button_double_clicked(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers);
 		virtual void mouse_button_released(mouse_button aButton, const point& aPosition);
 		virtual void mouse_moved(const point& aPosition);
 		virtual void mouse_entered();
 		virtual void mouse_left();
+		virtual void set_default_mouse_cursor();
 	public:
-		virtual void key_pressed(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers);
-		virtual void key_released(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers);
-		virtual void text_input(const std::string& aText);
+		virtual bool key_pressed(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers);
+		virtual bool key_released(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers);
+		virtual bool text_input(const std::string& aText);
+		virtual bool sys_text_input(const std::string& aText);
 	public:
 		virtual graphics_context create_graphics_context() const;
 	protected:
 		virtual i_widget& widget_for_mouse_event(const point& aPosition);
+		// helpers
+	public:
+		using i_widget::set_size_policy;
 	private:
 		i_widget* iParent;
+		i_widget* iLinkBefore;
+		i_widget* iLinkAfter;
 		widget_list iChildren;
 		std::shared_ptr<i_layout> iLayout;
 		std::unique_ptr<neolib::callback_timer> iLayoutTimer;
@@ -182,14 +208,15 @@ namespace neogfx
 		point iPosition;
 		size iSize;
 		optional_margins iMargins;
+		optional_size_policy iSizePolicy;
+		optional_size iWeight;
 		optional_size iMinimumSize;
 		optional_size iMaximumSize;
-		mutable std::vector<rect> iUpdateRects;
+		uint32_t iLayoutInProgress;
+		mutable std::unordered_set<rect> iUpdateRects;
 		bool iVisible;
 		bool iEnabled;
 		neogfx::focus_policy iFocusPolicy;
-		i_widget* iLinkBefore;
-		i_widget* iLinkAfter;
 		optional_colour iForegroundColour;
 		optional_colour iBackgroundColour;
 		optional_font iFont;

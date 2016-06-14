@@ -18,9 +18,12 @@
 */
 
 #include "neogfx.hpp"
+#include <neolib/raii.hpp>
 #include "app.hpp"
 #include "widget.hpp"
 #include "i_layout.hpp"
+
+#include "button.hpp"
 
 namespace neogfx
 {
@@ -51,15 +54,16 @@ namespace neogfx
 
 	widget::widget() :
 		iParent(0),
+		iLinkBefore(this),
+		iLinkAfter(this),
 		iDeviceMetricsForwarder(*this),
 		iUnitsContext(iDeviceMetricsForwarder),
 		iMinimumSize{},
 		iMaximumSize{},
+		iLayoutInProgress(0),
 		iVisible(true),
 		iEnabled(true),
 		iFocusPolicy(focus_policy::NoFocus),
-		iLinkBefore(this),
-		iLinkAfter(this),
 		iForegroundColour{},
 		iBackgroundColour{},
 		iIgnoreMouseEvents(false)
@@ -67,16 +71,17 @@ namespace neogfx
 	}
 	
 	widget::widget(i_widget& aParent) :
-		iParent(&aParent),
+		iParent(0),
+		iLinkBefore(this),
+		iLinkAfter(this),
 		iDeviceMetricsForwarder(*this),
 		iUnitsContext(iDeviceMetricsForwarder),
 		iMinimumSize{},
 		iMaximumSize{},
+		iLayoutInProgress(0),
 		iVisible(true),
 		iEnabled(true),
 		iFocusPolicy(focus_policy::NoFocus),
-		iLinkBefore(this),
-		iLinkAfter(this),
 		iForegroundColour{},
 		iBackgroundColour{},
 		iIgnoreMouseEvents(false)
@@ -86,26 +91,36 @@ namespace neogfx
 
 	widget::widget(i_layout& aLayout) :
 		iParent(0),
+		iLinkBefore(this),
+		iLinkAfter(this),
 		iDeviceMetricsForwarder(*this),
 		iUnitsContext(iDeviceMetricsForwarder),
 		iMinimumSize{},
 		iMaximumSize{},
+		iLayoutInProgress(0),
 		iVisible(true),
 		iEnabled(true),
 		iFocusPolicy(focus_policy::NoFocus),
-		iLinkBefore(this),
-		iLinkAfter(this),
 		iForegroundColour{},
 		iBackgroundColour{},
 		iIgnoreMouseEvents(false)
 	{
-		aLayout.add_widget(*this);
+		aLayout.add_item(*this);
 	}
 
 	widget::~widget()
 	{
+		if (app::instance().keyboard().is_keyboard_grabbed_by(*this))
+			app::instance().keyboard().ungrab_keyboard(*this);
+		remove_widgets();
+		{
+			auto layout = iLayout;
+			iLayout.reset();
+		}
 		if (has_parent())
 			parent().remove_widget(*this);
+		else
+			unlink();
 	}
 
 	const i_device_metrics& widget::device_metrics() const
@@ -128,19 +143,6 @@ namespace neogfx
 		return false;
 	}
 
-	void widget::set_parent(i_widget& aParent)
-	{
-		bool onSurface = has_surface();
-		if (onSurface && &surface() != &aParent.surface())
-		{
-			surface().widget_removed(*this);
-			onSurface = false;
-		}
-		iParent = &aParent;
-		if (!onSurface && has_surface())
-			surface().widget_added(*this);
-	}
-	
 	bool widget::has_parent() const
 	{
 		return iParent != 0;
@@ -160,35 +162,65 @@ namespace neogfx
 		return *iParent;
 	}
 
-	const i_widget& widget::ultimate_ancestor() const
+	void widget::set_parent(i_widget& aParent)
+	{
+		if (!is_root())
+		{
+			bool onSurface = has_surface();
+			if (onSurface && same_surface(aParent))
+			{
+				surface().widget_removed(*this);
+				onSurface = false;
+			}
+			iParent = &aParent;
+			if (!onSurface && has_surface())
+				surface().widget_added(*this);
+		}
+		else
+			iParent = &aParent;
+		parent_changed();
+	}
+
+	void widget::parent_changed()
+	{
+		if (!is_root() && has_managing_layout())
+			managing_layout().layout_items(true);
+	}
+
+	const i_widget& widget::ultimate_ancestor(bool aSameSurface) const
 	{
 		const i_widget* w = this;
-		while (w->has_parent())
+		while (w->has_parent() && (!aSameSurface || same_surface(w->parent())))
 			w = &w->parent();
 		return *w;
 	}
 
-	i_widget& widget::ultimate_ancestor()
+	i_widget& widget::ultimate_ancestor(bool aSameSurface)
 	{
 		i_widget* w = this;
-		while (w->has_parent())
+		while (w->has_parent() && (!aSameSurface || same_surface(w->parent())))
 			w = &w->parent();
-			return *w;
+		return *w;
 	}
 
-	bool widget::is_ancestor(const i_widget& aWidget) const
+	bool widget::is_ancestor_of(const i_widget& aWidget, bool aSameSurface) const
 	{
-		const i_widget* parent = &aWidget;
-		while (parent->has_parent())
+		const i_widget* w = &aWidget;
+		while (w->has_parent() && (!aSameSurface || same_surface(*w)))
 		{
-			parent = &parent->parent();
-			if (parent == this)
+			w = &w->parent();
+			if (w == this)
 				return true;
 		}
 		return false;
 	}
 
-	bool widget::is_sibling(const i_widget& aWidget) const
+	bool widget::is_descendent_of(const i_widget& aWidget, bool aSameSurface) const
+	{
+		return aWidget.is_ancestor_of(*this, aSameSurface);
+	}
+		
+	bool widget::is_sibling_of(const i_widget& aWidget) const
 	{
 		return has_parent() && aWidget.has_parent() && &parent() == &aWidget.parent();
 	}
@@ -245,6 +277,8 @@ namespace neogfx
 
 	void widget::add_widget(i_widget& aWidget)
 	{
+		if (aWidget.has_parent() && &aWidget.parent() == this)
+			return;
 		aWidget.set_parent(*this);
 		if (iChildren.empty())
 			set_link_after(aWidget);
@@ -257,6 +291,8 @@ namespace neogfx
 
 	void widget::add_widget(std::shared_ptr<i_widget> aWidget)
 	{
+		if (aWidget->has_parent() && &aWidget->parent() == this)
+			return;
 		aWidget->set_parent(*this);
 		if (iChildren.empty())
 			set_link_after(*aWidget);
@@ -269,6 +305,8 @@ namespace neogfx
 
 	void widget::remove_widget(i_widget& aWidget)
 	{
+		if (!aWidget.has_parent() && &aWidget.parent() != this)
+			throw not_child();
 		aWidget.unlink();
 		for (auto i = iChildren.begin(); i != iChildren.end(); ++i)
 			if (&**i == &aWidget)
@@ -278,6 +316,17 @@ namespace neogfx
 			}
 		if (has_surface())
 			surface().widget_removed(aWidget);
+	}
+
+	void widget::remove_widgets()
+	{
+		while(!iChildren.empty())
+		{
+			auto child = iChildren.back();
+			iChildren.pop_back();
+			if (has_surface())
+				surface().widget_removed(*child);
+		}
 	}
 
 	const widget::widget_list& widget::children() const
@@ -308,7 +357,7 @@ namespace neogfx
 
 	bool widget::has_layout() const
 	{
-		return iLayout.get() != 0;
+		return iLayout != nullptr;
 	}
 
 	void widget::set_layout(i_layout& aLayout)
@@ -316,15 +365,18 @@ namespace neogfx
 		iLayout = std::shared_ptr<i_layout>(std::shared_ptr<i_layout>(), &aLayout);
 		iLayout->set_owner(this);
 		for (auto& c : iChildren)
-			iLayout->add_widget(c);
+			iLayout->add_item(c);
 	}
 
 	void widget::set_layout(std::shared_ptr<i_layout> aLayout)
 	{
 		iLayout = aLayout;
-		iLayout->set_owner(this);
-		for (auto& c : iChildren)
-			iLayout->add_widget(c);
+		if (iLayout != nullptr)
+		{
+			iLayout->set_owner(this);
+			for (auto& c : iChildren)
+				iLayout->add_item(c);
+		}
 	}
 
 	const i_layout& widget::layout() const
@@ -382,10 +434,45 @@ namespace neogfx
 
 	void widget::layout_items(bool aDefer)
 	{
+		if (layout_items_in_progress())
+			return;
 		if (!aDefer)
 		{
 			if (has_layout())
+			{
+				layout_items_started();
+				if (is_root() && size_policy() != neogfx::size_policy::Manual)
+				{
+					size desiredSize = extents();
+					switch (size_policy().horizontal_size_policy())
+					{
+					case neogfx::size_policy::Fixed:
+					case neogfx::size_policy::Minimum:
+						desiredSize.cx = minimum_size(extents()).cx;
+						break;
+					case neogfx::size_policy::Maximum:
+						desiredSize.cx = maximum_size(extents()).cx;
+						break;
+					default:
+						break;
+					}
+					switch (size_policy().vertical_size_policy())
+					{
+					case neogfx::size_policy::Fixed:
+					case neogfx::size_policy::Minimum:
+						desiredSize.cy = minimum_size(extents()).cy;
+						break;
+					case neogfx::size_policy::Maximum:
+						desiredSize.cy = maximum_size(extents()).cy;
+						break;
+					default:
+						break;
+					}
+					resize(desiredSize);
+				}
 				layout().layout_items(client_rect(false).top_left(), client_rect(false).extents());
+				layout_items_completed();
+			}
 		}
 		else if (can_defer_layout())
 		{
@@ -393,8 +480,11 @@ namespace neogfx
 			{
 				iLayoutTimer = std::unique_ptr<neolib::callback_timer>(new neolib::callback_timer(app::instance(), [this](neolib::callback_timer&)
 				{
-					widget::layout_items();
+					widget* _this = this;
 					iLayoutTimer.reset();
+					if (!_this->surface().destroyed())
+						_this->layout_items();
+					_this->update();
 				}, 40));
 			}
 		}
@@ -404,9 +494,25 @@ namespace neogfx
 		}
 	}
 
+	void widget::layout_items_started()
+	{
+		++iLayoutInProgress;
+	}
+
+	bool widget::layout_items_in_progress() const
+	{
+		return iLayoutInProgress != 0;
+	}
+
 	void widget::layout_items_completed()
 	{
-		update();
+		if (--iLayoutInProgress == 0)
+			update();
+	}
+
+	logical_coordinate_system widget::logical_coordinate_system() const
+	{
+		return neogfx::logical_coordinate_system::AutomaticGui;
 	}
 
 	point widget::position() const
@@ -414,9 +520,14 @@ namespace neogfx
 		return units_converter(*this).from_device_units(iPosition);
 	}
 
-	point widget::origin(bool aNonClient) const
+	void widget::set_position(const point& aPosition)
 	{
-		if (has_parent())
+		move(aPosition);
+	}
+
+	point widget::origin(bool) const
+	{
+		if (has_parent() && same_surface(parent()))
 			return position() + parent().origin(false);
 		else
 			return point{};
@@ -435,12 +546,16 @@ namespace neogfx
 
 	void widget::moved()
 	{
-		layout_items();
 	}
 	
 	size widget::extents() const
 	{
 		return units_converter(*this).from_device_units(iSize);
+	}
+
+	void widget::set_extents(const size& aSize)
+	{
+		resize(aSize);
 	}
 
 	void widget::resize(const size& aSize)
@@ -483,27 +598,71 @@ namespace neogfx
 		return *this;
 	}
 
+	bool widget::has_size_policy() const
+	{
+		return iSizePolicy != boost::none;
+	}
+
+	size_policy widget::size_policy() const
+	{
+		if (has_size_policy())
+			return *iSizePolicy;
+		else
+			return size_policy::Expanding;
+	}
+
+	void widget::set_size_policy(const optional_size_policy& aSizePolicy, bool aUpdateLayout)
+	{
+		if (iSizePolicy != aSizePolicy)
+		{
+			iSizePolicy = aSizePolicy;
+			if (aUpdateLayout && has_managing_layout())
+				managing_layout().layout_items(true);
+		}
+	}
+
+	bool widget::has_weight() const
+	{
+		return iWeight != boost::none;
+	}
+
+	size widget::weight() const
+	{
+		if (has_weight())
+			return *iWeight;
+		return 1.0;
+	}
+
+	void widget::set_weight(const optional_size& aWeight, bool aUpdateLayout)
+	{
+		if (iWeight != aWeight)
+		{
+			iWeight = aWeight;
+			if (aUpdateLayout && has_managing_layout())
+				managing_layout().layout_items(true);
+		}
+	}
+
 	bool widget::has_minimum_size() const
 	{
 		return iMinimumSize != boost::none;
 	}
 
-	size widget::minimum_size() const
+	size widget::minimum_size(const optional_size& aAvailableSpace) const
 	{
 		return has_minimum_size() ?
 			units_converter(*this).from_device_units(*iMinimumSize) :
 			has_layout() ? 
-				layout().minimum_size() + margins().size() : 
-				size{};
+				layout().minimum_size(aAvailableSpace) + margins().size() :
+				margins().size();
 	}
 
 	void widget::set_minimum_size(const optional_size& aMinimumSize, bool aUpdateLayout)
 	{
-		if ((iMinimumSize == boost::none && aMinimumSize != boost::none) || 
-			(iMinimumSize != boost::none && aMinimumSize == boost::none) ||
-			(iMinimumSize != boost::none && *iMinimumSize != units_converter(*this).to_device_units(*aMinimumSize)))
+		optional_size newMinimumSize = (aMinimumSize != boost::none ? units_converter(*this).to_device_units(*aMinimumSize) : optional_size());
+		if (iMinimumSize != newMinimumSize)
 		{
-			iMinimumSize = aMinimumSize != boost::none ? units_converter(*this).to_device_units(*aMinimumSize) : optional_size();
+			iMinimumSize = newMinimumSize;
 			if (aUpdateLayout && has_managing_layout())
 				managing_layout().layout_items(true);
 		}
@@ -514,41 +673,26 @@ namespace neogfx
 		return iMaximumSize != boost::none;
 	}
 
-	size widget::maximum_size() const
+	size widget::maximum_size(const optional_size& aAvailableSpace) const
 	{
-		return has_maximum_size() ?
-			units_converter(*this).from_device_units(*iMaximumSize) :
-			has_layout() ?
-				layout().maximum_size() : 
-				size(std::numeric_limits<size::dimension_type>::max(), std::numeric_limits<size::dimension_type>::max());
+		return size_policy() == neogfx::size_policy::Minimum || size_policy() == neogfx::size_policy::Fixed ?
+			minimum_size(aAvailableSpace) :
+			has_maximum_size() ?
+				units_converter(*this).from_device_units(*iMaximumSize) :
+				has_layout() ?
+					layout().maximum_size(aAvailableSpace) :
+					size(std::numeric_limits<size::dimension_type>::max(), std::numeric_limits<size::dimension_type>::max());
 	}
 
 	void widget::set_maximum_size(const optional_size& aMaximumSize, bool aUpdateLayout)
 	{
-		if ((iMaximumSize == boost::none && aMaximumSize != boost::none) ||
-			(iMaximumSize != boost::none && aMaximumSize == boost::none) ||
-			(iMaximumSize != boost::none && *iMaximumSize != units_converter(*this).to_device_units(*aMaximumSize)))
+		optional_size newMaximumSize = (aMaximumSize != boost::none ? units_converter(*this).to_device_units(*aMaximumSize) : optional_size());
+		if (iMaximumSize != newMaximumSize)
 		{
-			iMaximumSize = aMaximumSize != boost::none ? units_converter(*this).to_device_units(*aMaximumSize) : optional_size();
+			iMaximumSize = newMaximumSize;
 			if (aUpdateLayout && has_managing_layout())
 				managing_layout().layout_items(true);
 		}
-	}
-
-	bool widget::is_fixed_size() const
-	{
-		return has_minimum_size() && minimum_size() == maximum_size();
-	}
-
-	void widget::set_fixed_size(const optional_size& aFixedSize, bool aUpdateLayout)
-	{
-		set_minimum_size(aFixedSize, aUpdateLayout);
-		set_maximum_size(aFixedSize, aUpdateLayout);
-	}
-
-	size widget::size_hint() const
-	{
-		return size{};
 	}
 
 	bool widget::has_margins() const
@@ -561,37 +705,40 @@ namespace neogfx
 		return units_converter(*this).from_device_units(has_margins() ? *iMargins : app::instance().current_style().margins());
 	}
 
-	void widget::set_margins(const optional_margins& aMargins)
+	void widget::set_margins(const optional_margins& aMargins, bool aUpdateLayout)
 	{
-		optional_margins oldMargins = iMargins;
-		iMargins = (aMargins != boost::none ? units_converter(*this).to_device_units(*aMargins) : optional_margins());
-		if (iMargins != oldMargins && has_managing_layout())
-			managing_layout().layout_items(true);
+		optional_margins newMargins = (aMargins != boost::none ? units_converter(*this).to_device_units(*aMargins) : optional_margins());
+		if (iMargins != newMargins)
+		{
+			iMargins = newMargins;
+			if (aUpdateLayout && has_managing_layout())
+				managing_layout().layout_items(true);
+		}
 	}
 
 	void widget::update(bool aIncludeNonClient)
 	{
-		if (surface().destroyed())
+		if ((!is_root() && !has_parent()) || !has_surface() || surface().destroyed() || hidden() || layout_items_in_progress())
 			return;
-		update(aIncludeNonClient ? window_rect() - origin() - client_rect().top_left() : client_rect());
+		update(aIncludeNonClient ? rect{ origin(true) - origin(), extents() } : client_rect());
 	}
 
 	void widget::update(const rect& aUpdateRect)
 	{
-		if (surface().destroyed()) 
+		if ((!is_root() && !has_parent()) || !has_surface() || surface().destroyed() || hidden() || layout_items_in_progress())
 			return;
-		if (!visible())
+		if (aUpdateRect.empty())
 			return;
-		if (std::find(iUpdateRects.begin(), iUpdateRects.end(), aUpdateRect) == iUpdateRects.end())
+		if (iUpdateRects.find(aUpdateRect) == iUpdateRects.end())
 		{
-			iUpdateRects.push_back(aUpdateRect);
-			if ((iBackgroundColour == boost::none || iBackgroundColour->alpha() != 0xFF) && has_parent() && has_surface() && &parent().surface() == &surface())
+			iUpdateRects.insert(aUpdateRect);
+			if ((iBackgroundColour == boost::none || iBackgroundColour->alpha() != 0xFF) && has_parent() && has_surface() && same_surface(parent()))
 				parent().update(rect(aUpdateRect.position() + position() + (origin() - origin(true)), aUpdateRect.extents()));
-			else if (is_root())
-				surface().invalidate_surface(aUpdateRect);
+			else
+				surface().invalidate_surface(aUpdateRect + origin());
 			for (auto& c : iChildren)
 			{
-				if (!c->visible())
+				if (c->hidden())
 					continue;
 				rect rectChild(c->position(), c->extents());
 				rect intersection = aUpdateRect.intersection(rectChild);
@@ -613,7 +760,7 @@ namespace neogfx
 	{
 		if (iUpdateRects.empty())
 			throw no_update_rect();
-		rect result = iUpdateRects[0];
+		rect result = *(iUpdateRects.begin());
 		for (const auto& ur : iUpdateRects)
 			result = result.combine(ur);
 		return result;
@@ -630,9 +777,14 @@ namespace neogfx
 		return clipRect;
 	}
 
+	bool widget::ready_to_render() const
+	{
+		return iLayoutTimer == nullptr;
+	}
+
 	void widget::render(graphics_context& aGraphicsContext) const
 	{
-		if (hidden())
+		if (effectively_hidden())
 		{
 			iUpdateRects.clear();
 			return;
@@ -645,14 +797,27 @@ namespace neogfx
 			paint_non_client(aGraphicsContext);
 			aGraphicsContext.scissor_off();
 			aGraphicsContext.set_extents(client_rect().extents());
-			aGraphicsContext.set_origin(origin() + client_rect().position());
+			aGraphicsContext.set_origin(origin());
 			aGraphicsContext.scissor_on(default_clip_rect());
+			auto savedCoordinateSystem = aGraphicsContext.logical_coordinate_system();
+			if (savedCoordinateSystem != logical_coordinate_system())
+			{
+				aGraphicsContext.set_logical_coordinate_system(logical_coordinate_system());
+				if (logical_coordinate_system() == neogfx::logical_coordinate_system::AutomaticGui)
+					aGraphicsContext.set_origin(origin());
+				else if (logical_coordinate_system() == neogfx::logical_coordinate_system::AutomaticGame)
+					aGraphicsContext.set_origin(point{origin().x, surface().extents().cy - (origin().y + extents().cy)});
+			}
+			painting.trigger(aGraphicsContext);
 			paint(aGraphicsContext);
+			if (savedCoordinateSystem != aGraphicsContext.logical_coordinate_system())
+				aGraphicsContext.set_logical_coordinate_system(savedCoordinateSystem);
 			aGraphicsContext.scissor_off();
 		}
 		iUpdateRects.clear();
-		for (auto& c : iChildren)
+		for (auto i = iChildren.rbegin(); i != iChildren.rend(); ++i)
 		{
+			const auto& c = *i;
 			rect rectChild(c->position(), c->extents());
 			rect intersection = client_rect().intersection(rectChild);
 			if (!intersection.empty())
@@ -671,13 +836,13 @@ namespace neogfx
 		{
 			if (surface().native_surface().using_frame_buffer())
 				for (const auto& ur : iUpdateRects)
-					aGraphicsContext.fill_solid_rect(ur, background_colour());
+					aGraphicsContext.fill_rect(ur + (origin() - origin(true)), background_colour());
 			else
-				aGraphicsContext.fill_solid_rect(client_rect(), background_colour());
+				aGraphicsContext.fill_rect(client_rect() + (origin() - origin(true)), background_colour());
 		}
 	}
 
-	void widget::paint(graphics_context& aGraphicsContext) const
+	void widget::paint(graphics_context&) const
 	{
 	}
 
@@ -746,6 +911,8 @@ namespace neogfx
 	void widget::set_font(const optional_font& aFont)
 	{
 		iFont = aFont;
+		if (has_managing_layout())
+			managing_layout().layout_items(true);
 		update();
 	}
 
@@ -754,9 +921,19 @@ namespace neogfx
 		return iVisible;
 	}
 
+	bool widget::effectively_visible() const
+	{
+		return visible() && (is_root() || !has_parent() || parent().effectively_visible());
+	}
+
 	bool widget::hidden() const
 	{
 		return !visible();
+	}
+
+	bool widget::effectively_hidden() const
+	{
+		return !effectively_visible();
 	}
 
 	void widget::show(bool aVisible)
@@ -764,7 +941,9 @@ namespace neogfx
 		if (iVisible != aVisible)
 		{
 			iVisible = aVisible;
-			managing_layout().layout_items(true);
+			visibility_changed.trigger();
+			if (has_managing_layout())
+				managing_layout().layout_items(true);
 		}
 	}
 
@@ -782,10 +961,20 @@ namespace neogfx
 	{
 		return iEnabled;
 	}
+
+	bool widget::effectively_enabled() const
+	{
+		return enabled() && (is_root() || !has_parent() || parent().effectively_enabled());
+	}
 	
 	bool widget::disabled() const
 	{
 		return !enabled();
+	}
+
+	bool widget::effectively_disabled() const
+	{
+		return !effectively_enabled();
 	}
 
 	void widget::enable(bool aEnable)
@@ -847,7 +1036,9 @@ namespace neogfx
 
 	bool widget::has_focus() const
 	{
-		return surface().has_focused_widget() && &surface().focused_widget() == this;
+		return surface().surface_type() == surface_type::Window &&
+			static_cast<const i_native_window&>(surface().native_surface()).is_active() &&
+			surface().has_focused_widget() && &surface().focused_widget() == this;
 	}
 
 	void widget::set_focus()
@@ -886,10 +1077,10 @@ namespace neogfx
 			parent().mouse_wheel_scrolled(aWheel, aDelta);
 	}
 
-	void widget::mouse_button_pressed(mouse_button aButton, const point& aPosition)
+	void widget::mouse_button_pressed(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers)
 	{
 		if (aButton == mouse_button::Middle && has_parent())
-			parent().mouse_button_pressed(aButton, aPosition + position());
+			parent().mouse_button_pressed(aButton, aPosition + position(), aKeyModifiers);
 		else
 		{
 			set_capture();
@@ -897,18 +1088,25 @@ namespace neogfx
 		}
 	}
 
-	void widget::mouse_button_double_clicked(mouse_button aButton, const point& aPosition)
+	void widget::mouse_button_double_clicked(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers)
 	{
+		if (aButton == mouse_button::Middle && has_parent())
+			parent().mouse_button_double_clicked(aButton, aPosition + position(), aKeyModifiers);
+		else
+		{
+			set_capture();
+			update();
+		}
 	}
 
-	void widget::mouse_button_released(mouse_button aButton, const point& aPosition)
+	void widget::mouse_button_released(mouse_button, const point&)
 	{
 		if (capturing())
 			release_capture();
 		update();
 	}
 
-	void widget::mouse_moved(const point& aPosition)
+	void widget::mouse_moved(const point&)
 	{
 	}
 
@@ -920,16 +1118,29 @@ namespace neogfx
 	{
 	}
 
-	void widget::key_pressed(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers)
+	void widget::set_default_mouse_cursor()
 	{
+		surface().set_mouse_cursor(mouse_system_cursor::Arrow);
 	}
 
-	void widget::key_released(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers)
+	bool widget::key_pressed(scan_code_e, key_code_e, key_modifiers_e)
 	{
+		return false;
 	}
 
-	void widget::text_input(const std::string& aText)
+	bool widget::key_released(scan_code_e, key_code_e, key_modifiers_e)
 	{
+		return false;
+	}
+
+	bool widget::text_input(const std::string&)
+	{
+		return false;
+	}
+
+	bool widget::sys_text_input(const std::string&)
+	{
+		return false;
 	}
 
 	i_widget& widget::widget_for_mouse_event(const point& aPosition)

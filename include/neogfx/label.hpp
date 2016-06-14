@@ -20,25 +20,58 @@
 #pragma once
 
 #include "neogfx.hpp"
-#include "horizontal_layout.hpp"
+#include "grid_layout.hpp"
 #include "text_widget.hpp"
+#include "image_widget.hpp"
 
 namespace neogfx
 {
+	enum class label_placement
+	{
+		TextHorizontal,
+		TextVertical,
+		ImageHorizontal,
+		ImageVertical,
+		TextImageHorizontal,
+		TextImageVertical,
+		ImageTextHorizontal,
+		ImageTextVertical,
+	};
+
 	class label : public widget
 	{
 	public:
-		label(const std::string& aText = std::string(), bool aMultiLine = false, alignment aAlignment = alignment::Left | alignment::VCentre);
-		label(i_widget& aParent, const std::string& aText = std::string(), bool aMultiLine = false, alignment aAlignment = alignment::Left | alignment::VCentre);
-		label(i_layout& aLayout, const std::string& aText = std::string(), bool aMultiLine = false, alignment aAlignment = alignment::Left | alignment::VCentre);
+		struct no_buddy : std::logic_error { no_buddy() : std::logic_error("neogfx::label::no_buddy") {} };
 	public:
+		label(const std::string& aText = std::string(), bool aMultiLine = false, alignment aAlignment = alignment::Left | alignment::VCentre, label_placement aPlacement = label_placement::ImageTextHorizontal);
+		label(i_widget& aParent, const std::string& aText = std::string(), bool aMultiLine = false, alignment aAlignment = alignment::Left | alignment::VCentre, label_placement aPlacement = label_placement::ImageTextHorizontal);
+		label(i_layout& aLayout, const std::string& aText = std::string(), bool aMultiLine = false, alignment aAlignment = alignment::Left | alignment::VCentre, label_placement aPlacement = label_placement::ImageTextHorizontal);
+	public:
+		virtual neogfx::size_policy size_policy() const;
+		using widget::set_size_policy;
+		virtual void set_size_policy(const optional_size_policy& aSizePolicy, bool aUpdateLayout = true);
+	public:
+		label_placement placement() const;
+		void set_placement(label_placement aPlacement);
+		const image_widget& image() const;
+		image_widget& image();
 		const text_widget& text() const;
 		text_widget& text();
+		bool has_buddy() const;
+		i_widget& buddy() const;
+		void set_buddy(i_widget& aBuddy);
+		void set_buddy(std::shared_ptr<i_widget> aBuddy);
+		void unset_buddy();
 	private:
-		void handle_alignment();
+		void init();
+		label_placement effective_placement() const;
+		void handle_placement_change();
 	private:
 		alignment iAlignment;
-		horizontal_layout iLayout;
-		std::shared_ptr<i_widget> iText;
+		label_placement iPlacement;
+		grid_layout iLayout;
+		image_widget iImage;
+		text_widget iText;
+		std::shared_ptr<i_widget> iBuddy;
 	};
 }

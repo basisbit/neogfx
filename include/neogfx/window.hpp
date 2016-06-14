@@ -37,23 +37,36 @@ namespace neogfx
 			Invalid				= 0x0000,
 			None				= 0x0001,	// No decoration at all(useful for splash screens, for example); this style cannot be combined with others
 			Titlebar			= 0x0002,	// The window has a titlebar
-			Resize				= 0x0004,	// The window can be resized and has a maximize button
-			Close				= 0x0008,	// The window has a close button
-			Fullscreen			= 0x0010,	// The window is shown in fullscreen mode; this style cannot be combined with others, and requires a valid video mode
-			Modal				= 0x0020,
-			ApplicationModal	= 0x0040,
-			Default				= Titlebar | Resize | Close
+			MinimizeBox			= 0x0004,
+			MaximizeBox			= 0x0008,
+			Resize				= 0x0010,	// The window can be resized and has a maximize button
+			Close				= 0x0020,	// The window has a close button
+			Fullscreen			= 0x0040,	// The window is shown in fullscreen mode; this style cannot be combined with others, and requires a valid video mode
+			Modal				= 0x0080,
+			ApplicationModal	= 0x0100,
+			NoActivate			= 0x0200,
+			RequiresOwnerFocus	= 0x0400,
+			DismissOnOwnerClick = 0x0800,
+			InitiallyHidden		= 0x1000,
+			Weak				= 0x8000,
+			Default				= Titlebar | MinimizeBox | MaximizeBox | Resize | Close
 		};
 	public:
-		window(const video_mode& aVideoMode, uint32_t aStyle = Default);
-		window(const video_mode& aVideoMode, const std::string& aWindowTitle, uint32_t aStyle = Default);
-		window(dimension aWidth, dimension aHeight, uint32_t aStyle = Default);
-		window(dimension aWidth, dimension aHeight, const std::string& aWindowTitle, uint32_t aStyle = Default);
-		window(window& aParent, const video_mode& aVideoMode, uint32_t aStyle = Default);
-		window(window& aParent, const video_mode& aVideoMode, const std::string& aWindowTitle, uint32_t aStyle = Default);
-		window(window& aParent, dimension aWidth, dimension aHeight, uint32_t aStyle = Default);
-		window(window& aParent, dimension aWidth, dimension aHeight, const std::string& aWindowTitle, uint32_t aStyle = Default);
+		window(const video_mode& aVideoMode, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
+		window(const video_mode& aVideoMode, const std::string& aWindowTitle, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
+		window(const size& aDimensions, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
+		window(const size& aDimensions, const std::string& aWindowTitle, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
+		window(const point& aPosition, const size& aDimensions, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
+		window(const point& aPosition, const size& aDimensions, const std::string& aWindowTitle, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
+		window(i_widget& aParent, const video_mode& aVideoMode, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
+		window(i_widget& aParent, const video_mode& aVideoMode, const std::string& aWindowTitle, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
+		window(i_widget& aParent, const size& aDimensions, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
+		window(i_widget& aParent, const size& aDimensions, const std::string& aWindowTitle, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
+		window(i_widget& aParent, const point& aPosition, const size& aDimensions, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
+		window(i_widget& aParent, const point& aPosition, const size& aDimensions, const std::string& aWindowTitle, style_e aStyle = Default, i_scrollbar::style_e aScrollbarStyle = i_scrollbar::Normal, framed_widget::style_e aFrameStyle = framed_widget::NoFrame);
 		~window();
+	public:
+		uint32_t style() const;
 	public:
 		virtual bool is_root() const;
 		virtual bool can_defer_layout() const;
@@ -69,14 +82,33 @@ namespace neogfx
 		virtual units_e units() const;
 		virtual units_e set_units(units_e aUnits) const;
 	public:
+		virtual void resized();
+	public:
+		virtual neogfx::size_policy size_policy() const;
+	public:
 		virtual colour background_colour() const;
 	public:
-		virtual surface_type_e surface_type() const;
+		virtual bool is_weak() const;
+		virtual void close();
+		virtual bool has_parent_surface() const;
+		virtual const i_surface& parent_surface() const;
+		virtual i_surface& parent_surface();
+		virtual bool is_owner_of(const i_surface& aChildSurface) const;
+		virtual bool is_dismissing_children() const;
+		virtual bool can_dismiss(const i_widget* aClickedWidget) const;
+	public:
+		virtual neogfx::surface_type surface_type() const;
+		virtual neogfx::logical_coordinate_system logical_coordinate_system() const;
+		virtual void set_logical_coordinate_system(neogfx::logical_coordinate_system aSystem);
+		virtual const vector4& logical_coordinates() const;
+		virtual void set_logical_coordinates(const vector4& aCoordinates);
 		virtual void layout_surface();
 		virtual void invalidate_surface(const rect& aInvalidatedRect, bool aInternal = true);
+		virtual void render_surface();
 		virtual graphics_context create_graphics_context() const;
-		virtual const i_native_surface& native_surface() const;
-		virtual i_native_surface& native_surface();
+		virtual graphics_context create_graphics_context(const i_widget& aWidget) const;
+		virtual const i_native_window& native_surface() const;
+		virtual i_native_window& native_surface();
 		virtual bool destroyed() const;
 	public:
 		virtual point surface_position() const;
@@ -94,6 +126,9 @@ namespace neogfx
 		virtual void widget_added(i_widget& aWidget);
 		virtual void widget_removed(i_widget& aWidget);
 	public:
+		virtual void show(bool aVisible);
+		using scrollable_widget::show;
+		virtual bool requires_owner_focus() const;
 		virtual bool has_entered_widget() const;
 		virtual i_widget& entered_widget() const;
 		virtual bool has_capturing_widget() const;
@@ -111,18 +146,18 @@ namespace neogfx
 		virtual bool has_surface() const;
 		virtual const i_surface& surface() const;
 		virtual i_surface& surface();
-	protected:
-		virtual void init();
 	private:
 		virtual void native_window_closing();
 		virtual void native_window_closed();
 		virtual void native_window_focus_gained();
 		virtual void native_window_focus_lost();
 		virtual void native_window_resized();
+		virtual bool native_window_ready_to_render() const;
 		virtual void native_window_render(const rect& aInvalidatedRect) const;
+		virtual void native_window_dismiss_children();
 		virtual void native_window_mouse_wheel_scrolled(mouse_wheel aWheel, delta aDelta);
-		virtual void native_window_mouse_button_pressed(mouse_button aButton, const point& aPosition);
-		virtual void native_window_mouse_button_double_clicked(mouse_button aButton, const point& aPosition);
+		virtual void native_window_mouse_button_pressed(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers);
+		virtual void native_window_mouse_button_double_clicked(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers);
 		virtual void native_window_mouse_button_released(mouse_button aButton, const point& aPosition);
 		virtual void native_window_mouse_moved(const point& aPosition);
 		virtual void native_window_mouse_entered();
@@ -130,17 +165,34 @@ namespace neogfx
 		virtual void native_window_key_pressed(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers);
 		virtual void native_window_key_released(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers);
 		virtual void native_window_text_input(const std::string& aText);
+		virtual void native_window_sys_text_input(const std::string& aText);
+		virtual void native_window_set_default_mouse_cursor();
 	private:
+		void init();
 		void update_click_focus(i_widget& aCandidateWidget);
 		void update_modality();
+		void dismiss_children(const i_widget* aClickedWidget = 0);
 	private:
 		std::unique_ptr<i_native_window> iNativeWindow;
-		uint32_t iStyle;
+		style_e iStyle;
 		mutable units_e iUnits;
 		int32_t iCountedEnable;
-		bool iClosing;
+		bool iNativeWindowClosing;
+		bool iClosed;
 		i_widget* iEnteredWidget;
 		i_widget* iCapturingWidget;
 		i_widget* iFocusedWidget;
+		bool iDismissingChildren;
+		boost::optional<char32_t> iSurrogatePairPart;
 	};
+
+	inline constexpr window::style_e operator|(window::style_e aLhs, window::style_e aRhs)
+	{
+		return static_cast<window::style_e>(static_cast<uint32_t>(aLhs) | static_cast<uint32_t>(aRhs));
+	}
+
+	inline constexpr window::style_e operator&(window::style_e aLhs, window::style_e aRhs)
+	{
+		return static_cast<window::style_e>(static_cast<uint32_t>(aLhs) & static_cast<uint32_t>(aRhs));
+	}
 }

@@ -50,21 +50,30 @@ namespace neogfx
 			failed_to_get_window_information(const std::string& aReason) :
 				std::runtime_error("neogfx::sdl_window::failed_to_get_window_information: Failed to get window information, reason: " + aReason) {}
 		};
+		struct failed_to_detach_from_sdl_window : std::runtime_error {
+			failed_to_detach_from_sdl_window(const std::string& aReason) :
+				std::runtime_error("neogfx::sdl_window::failed_to_detach_from_sdl_window: Failed to detach from SDL window, reason: " + aReason) {}
+		};
 		struct no_cursors_saved : std::logic_error { no_cursors_saved() : std::logic_error("neogfx::sdl_window::no_cursors_saved") {} };
 	private:
 		typedef std::shared_ptr<SDL_Cursor> cursor_pointer;
 	public:
-		static uint32_t convert_style(uint32_t aStyle);
+		static uint32_t convert_style(window::style_e aStyle);
 		static mouse_button convert_mouse_button(Uint32 aButton);
 		static mouse_button convert_mouse_button(Uint8 aButtonIndex);
 		static Uint32 convert_mouse_button(mouse_button aButton);
 	public:
-		sdl_window(i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, const video_mode& aVideoMode, const std::string& aWindowTitle, uint32_t aStyle = window::Default);
-		sdl_window(i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, sdl_window& aParent, const video_mode& aVideoMode, const std::string& aWindowTitle, uint32_t aStyle = window::Default);
+		sdl_window(i_basic_services& aBasicServices, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, const video_mode& aVideoMode, const std::string& aWindowTitle, window::style_e aStyle = window::Default);
+		sdl_window(i_basic_services& aBasicServices, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, const basic_size<int>& aDimensions, const std::string& aWindowTitle, window::style_e aStyle = window::Default);
+		sdl_window(i_basic_services& aBasicServices, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, const basic_point<int>& aPosition, const basic_size<int>& aDimensions, const std::string& aWindowTitle, window::style_e aStyle = window::Default);
+		sdl_window(i_basic_services& aBasicServices, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, sdl_window& aParent, const video_mode& aVideoMode, const std::string& aWindowTitle, window::style_e aStyle = window::Default);
+		sdl_window(i_basic_services& aBasicServices, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, sdl_window& aParent, const basic_size<int>& aDimensions, const std::string& aWindowTitle, window::style_e aStyle = window::Default);
+		sdl_window(i_basic_services& aBasicServices, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, sdl_window& aParent, const basic_point<int>& aPosition, const basic_size<int>& aDimensions, const std::string& aWindowTitle, window::style_e aStyle = window::Default);
 		~sdl_window();
 	public:
 		virtual void* handle() const;
 		virtual void* native_handle() const;
+		virtual void* native_context() const;
 		virtual point surface_position() const;
 		virtual void move_surface(const point& aPosition);
 		virtual size surface_size() const;
@@ -77,26 +86,50 @@ namespace neogfx
 		virtual void restore_mouse_cursor();
 	public:
 		virtual std::unique_ptr<i_native_graphics_context> create_graphics_context() const;
+		virtual std::unique_ptr<i_native_graphics_context> create_graphics_context(const i_widget& aWidget) const;
 	public:
 		virtual void close();
+		virtual void show(bool aActivate = false);
+		virtual void hide();
 		virtual bool is_active() const;
 		virtual void activate();
 		virtual void enable(bool aEnable);
 		virtual void set_capture();
 		virtual void release_capture();
+		virtual bool is_destroyed() const;
+	public:
+		virtual void activate_context() const;
+		virtual void deactivate_context() const;
 	private:
+		void init();
 		void process_event(const SDL_Event& aEvent);
+		virtual void destroying();
+		virtual void destroyed();
+		void do_activate_context() const;
+		void do_activate_default_context() const;
+		void push_mouse_button_event_extra_info(key_modifiers_e aKeyModifiers);
+		static std::deque<const sdl_window*>& context_activation_stack();
+#ifdef WIN32
+		static LRESULT CALLBACK CustomWindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
+#endif
 	private:
-		virtual void activate_context();
-		virtual void deactivate_context();
 		virtual void display();
 		virtual bool processing_event() const;
 	private:
+		sdl_window* iParent;
+		uint32_t iStyle;
 		SDL_Window* iHandle;
+		mutable void* iNativeHandle;
+#ifdef WIN32
+		WNDPROC iSDLWindowProc;
+#endif
 		SDL_GLContext iContext;
+		size iExtents;
 		bool iProcessingEvent;
 		bool iCapturingMouse;
 		cursor_pointer iCurrentCursor;
 		std::vector<cursor_pointer> iSavedCursors;
+		bool iDestroyed;
+		std::deque<key_modifiers_e> iMouseButtonEventExtraInfo;
 	};
 }

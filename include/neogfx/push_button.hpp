@@ -31,7 +31,11 @@ namespace neogfx
 		enum style_e
 		{
 			ButtonStyleNormal,
-			ButtonStyleItemViewHeader
+			ButtonStyleButtonBox,
+			ButtonStyleItemViewHeader,
+			ButtonStyleTab,
+			ButtonStyleSpinBox,
+			ButtonStyleToolbar
 		};
 		static const uint32_t kMaxAnimationFrame = 20;
 	public:
@@ -39,12 +43,19 @@ namespace neogfx
 		push_button(i_widget& aParent, const std::string& aText = std::string(), style_e aStyle = ButtonStyleNormal);
 		push_button(i_layout& aLayout, const std::string& aText = std::string(), style_e aStyle = ButtonStyleNormal);
 	public:
+		virtual size minimum_size(const optional_size& aAvailableSpace = optional_size()) const;
+		virtual size maximum_size(const optional_size& aAvailableSpace = optional_size()) const;
+	public:
+		virtual void paint_non_client(graphics_context& aGraphicsContext) const;
 		virtual void paint(graphics_context& aGraphicsContext) const;
 	public:
 		virtual void mouse_entered();
 		virtual void mouse_left();
-	private:
-		path get_path() const;
+	protected:
+		virtual rect path_bounding_rect() const;
+		virtual neogfx::path path() const;
+		virtual bool spot_colour() const;
+		virtual colour border_mid_colour() const;
 		bool has_hover_colour() const;
 		colour hover_colour() const;
 		void set_hover_colour(const optional_colour& aHoverColour = optional_colour());
@@ -56,5 +67,6 @@ namespace neogfx
 		uint32_t iAnimationFrame;
 		style_e iStyle;
 		optional_colour iHoverColour;
+		mutable boost::optional<std::pair<neogfx::font, size>> iStandardButtonWidth;
 	};
 }

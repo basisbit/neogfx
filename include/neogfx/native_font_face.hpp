@@ -20,6 +20,9 @@
 #pragma once
 
 #include "neogfx.hpp"
+#include <unordered_map>
+#include <boost/functional/hash.hpp>
+#include <boost/pool/pool_alloc.hpp>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #ifdef u8
@@ -31,7 +34,7 @@
 #else
 #include <hb.h>
 #include <hb-ft.h>
-#include <hb-unicode.h>
+#include <hb-ucdn\ucdn.h>
 #endif
 #include "geometry.hpp"
 #include "i_surface.hpp"
@@ -47,7 +50,9 @@ namespace neogfx
 	class native_font_face : public i_native_font_face
 	{
 	private:
-		typedef std::map<uint32_t, neogfx::glyph_texture> glyph_map;
+		typedef std::unordered_map<uint32_t, neogfx::glyph_texture> glyph_map;
+		typedef std::unordered_map<std::pair<uint32_t, uint32_t>, dimension, boost::hash<std::pair<uint32_t, uint32_t>>, std::equal_to<std::pair<uint32_t, uint32_t>>, 
+			boost::fast_pool_allocator<std::pair<const std::pair<uint32_t, uint32_t>, dimension>>> kerning_table;
 	public:
 		struct hb_handle
 		{
@@ -78,11 +83,15 @@ namespace neogfx
 		virtual dimension horizontal_dpi() const;
 		virtual dimension vertical_dpi() const;
 		virtual dimension height() const;
+		virtual dimension descender() const;
+		virtual dimension underline_position() const;
+		virtual dimension underline_thickness() const;
 		virtual dimension line_spacing() const;
-		virtual dimension kerning(uint32_t aFirstCodePoint, uint32_t aSecondCodePoint) const;
+		virtual dimension kerning(uint32_t aLeftGlyphIndex, uint32_t aRightGlyphIndex) const;
 		virtual i_native_font_face& fallback() const;
 		virtual void* handle() const;
 		virtual void* aux_handle() const;
+		virtual uint32_t glyph_index(char32_t aCodePoint) const;
 		virtual i_glyph_texture& glyph_texture(const glyph& aGlyph) const;
 	private:
 		i_rendering_engine& iRenderingEngine;
@@ -92,10 +101,12 @@ namespace neogfx
 		font::point_size iSize;
 		neogfx::size iPixelDensityDpi;
 		FT_Face iHandle;
-		mutable hb_handle* iAuxHandle;
+		mutable std::unique_ptr<hb_handle> iAuxHandle;
 		mutable std::unique_ptr<i_native_font_face> iFallbackFont;
 		mutable glyph_map iGlyphs;
 		mutable std::vector<GLubyte> iGlyphTextureData;
 		mutable std::vector<std::array<GLubyte, 3>> iSubpixelGlyphTextureData;
+		bool iHasKerning;
+		mutable kerning_table iKerningTable;
 	};
 }

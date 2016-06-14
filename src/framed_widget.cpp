@@ -41,23 +41,35 @@ namespace neogfx
 	{
 	}
 
-	point framed_widget::origin(bool aNonClient) const
-	{
-		point o = widget::origin(aNonClient);
-		if (!aNonClient)
-		{
-			o.x += effective_frame_width();
-			o.y += effective_frame_width();
-		}
-		return o;
-	}
-
 	rect framed_widget::client_rect(bool aIncludeMargins) const
 	{
 		rect cr = widget::client_rect(aIncludeMargins);
+		cr.x += effective_frame_width();
+		cr.y += effective_frame_width();
 		cr.cx -= effective_frame_width() * 2.0;
 		cr.cy -= effective_frame_width() * 2.0;
 		return cr;
+	}
+
+	size framed_widget::minimum_size(const optional_size& aAvailableSpace) const
+	{
+		size result = widget::minimum_size(aAvailableSpace);
+		if (!has_minimum_size())
+			result += size{ effective_frame_width() * 2.0 };
+		return result;
+	}
+
+	size framed_widget::maximum_size(const optional_size& aAvailableSpace) const
+	{
+		size result = widget::maximum_size(aAvailableSpace);
+		if (!has_maximum_size())
+		{
+			if (result.cx != std::numeric_limits<size::dimension_type>::max())
+				result.cx += effective_frame_width() * 2.0;
+			if (result.cy != std::numeric_limits<size::dimension_type>::max())
+				result.cy += effective_frame_width() * 2.0;
+		}
+		return result;
 	}
 
 	bool framed_widget::transparent_background() const
@@ -67,7 +79,7 @@ namespace neogfx
 
 	void framed_widget::paint_non_client(graphics_context& aGraphicsContext) const
 	{
-		colour frameColour = (background_colour().dark() ? background_colour().lighter(0x60) : background_colour().darker(0x60));
+		colour frameColour = frame_colour();
 		widget::paint_non_client(aGraphicsContext);
 		switch (iStyle)
 		{
@@ -81,6 +93,18 @@ namespace neogfx
 			break;
 		case SolidFrame:
 			aGraphicsContext.draw_rect(rect(point(0.0, 0.0), window_rect().extents()), pen(frameColour, effective_frame_width()));
+			break;
+		case ContainerFrame:
+			{
+				colour midColour = (has_foreground_colour() ? foreground_colour() : container_background_colour());
+				colour borderColour = midColour.darker(0x40);
+				colour innerBorderColour = midColour.lighter(0x40);
+				rect rectBorder = rect(point(0.0, 0.0), window_rect().extents());
+				rectBorder.deflate(line_width(), line_width());
+				aGraphicsContext.draw_rect(rectBorder, pen(innerBorderColour, line_width()));
+				rectBorder.inflate(line_width(), line_width());
+				aGraphicsContext.draw_rect(rectBorder, pen(borderColour, line_width()));
+			}
 			break;
 		case DoubleFrame:
 			break;
@@ -100,6 +124,26 @@ namespace neogfx
 		widget::paint(aGraphicsContext);
 	}
 
+	void framed_widget::set_style(style_e aStyle)
+	{
+		if (iStyle != aStyle)
+		{
+			iStyle = aStyle;
+			if (has_managing_layout())
+				managing_layout().layout_items(true);
+		}
+	}
+
+	colour framed_widget::frame_colour() const
+	{
+		return (background_colour().dark() ? background_colour().lighter(0x60) : background_colour().darker(0x60));
+	}
+
+	dimension framed_widget::line_width() const
+	{
+		return units_converter(*this).from_device_units(iLineWidth);
+	}
+
 	dimension framed_widget::effective_frame_width() const
 	{
 		switch (iStyle)
@@ -110,15 +154,17 @@ namespace neogfx
 		case DottedFrame:
 		case DashedFrame:
 		case SolidFrame:
-			return units_converter(*this).from_device_units(iLineWidth);
+			return line_width();
+		case ContainerFrame:
+			return line_width() * 2.0;
 		case DoubleFrame:
 		case GrooveFrame:
 		case RidgeFrame:
-			return units_converter(*this).from_device_units(iLineWidth) * 3.0;
+			return line_width() * 3.0;
 		case InsetFrame:
 		case OutsetFrame:
 		case HiddenFrame:
-			return units_converter(*this).from_device_units(iLineWidth);
+			return line_width();
 		}
 	}
 }

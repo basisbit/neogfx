@@ -23,32 +23,33 @@
 namespace neogfx
 {
 	font_texture::font_texture(const size& aExtents, bool aSubPixelRendering) :
-		iExtents(aExtents), iBinPack(aExtents, false)
+		iExtents(aExtents), iSubPixelRendering(aSubPixelRendering), iBinPack(aExtents, false)
 	{
 		GLint previousTexture;
-		glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
-		glGenTextures(1, &iHandle);
-		glBindTexture(GL_TEXTURE_2D, iHandle);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glCheck(glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture));
+		glCheck(glGenTextures(1, &iHandle));
+		glCheck(glBindTexture(GL_TEXTURE_2D, iHandle));
+		glCheck(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+		glCheck(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
 		std::vector<std::array<uint8_t, 3>> data(static_cast<std::size_t>(iExtents.cx * iExtents.cy), std::array<uint8_t, 3>{{0xFF, 0xFF, 0xFF}});
-		glTexImage2D(GL_TEXTURE_2D, 0, aSubPixelRendering ? GL_RGB : GL_ALPHA, static_cast<GLsizei>(iExtents.cx), static_cast<GLsizei>(iExtents.cy), 0, aSubPixelRendering ? GL_RGB : GL_ALPHA, GL_UNSIGNED_BYTE, &data[0]);
-		glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+		glCheck(glTexImage2D(GL_TEXTURE_2D, 0, aSubPixelRendering ? GL_RGB : GL_ALPHA, static_cast<GLsizei>(iExtents.cx), static_cast<GLsizei>(iExtents.cy), 0, aSubPixelRendering ? GL_RGB : GL_ALPHA, GL_UNSIGNED_BYTE, &data[0]));
+		glCheck(glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture)));
 	}
 
 	font_texture::~font_texture()
 	{
-		glDeleteTextures(1, &iHandle);
+		glCheck(glDeleteTextures(1, &iHandle));
 	}
 
 	const size& font_texture::extents() const
 	{
-		return iExtents;
+		return iExtents;													
 	}
 
 	bool font_texture::allocate_glyph_space(const size& aSize, rect& aResult)
 	{
-		return iBinPack.insert(size(std::max(std::pow(2.0, std::ceil(std::log2(aSize.cx + 3))), 16.0), std::max(std::pow(2.0, std::ceil(std::log2(aSize.cy + 1))), 16.0)), aResult);
+		bool ok = iBinPack.insert(size(std::max(std::pow(2.0, std::ceil(std::log2(aSize.cx + (iSubPixelRendering ? 6 : 2)))), 16.0), std::max(std::pow(2.0, std::ceil(std::log2(aSize.cy + 2))), 16.0)), aResult);
+		return ok;
 	}
 
 	void* font_texture::handle() const

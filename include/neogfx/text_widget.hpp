@@ -26,11 +26,14 @@ namespace neogfx
 	class text_widget : public widget
 	{
 	public:
+		event<> text_changed;
+	public:
 		text_widget(const std::string& aText = std::string(), bool aMultiLine = false);
 		text_widget(i_widget& aParent, const std::string& aText = std::string(), bool aMultiLine = false);
 		text_widget(i_layout& aLayout, const std::string& aText = std::string(), bool aMultiLine = false);
 	public:
-		virtual size minimum_size() const;
+		virtual neogfx::size_policy size_policy() const;
+		virtual size minimum_size(const optional_size& aAvailableSpace = optional_size()) const;
 	public:
 		virtual void paint(graphics_context& aGraphicsContext) const;
 	public:
@@ -39,6 +42,8 @@ namespace neogfx
 		const std::string& text() const;
 		void set_text(const std::string& aText);
 		bool multi_line() const;
+		neogfx::alignment alignment() const;
+		void set_alignment(neogfx::alignment aAlignment, bool aUpdateLayout = true);
 		bool has_text_colour() const;
 		colour text_colour() const;
 		void set_text_colour(const optional_colour& aTextColour);
@@ -49,6 +54,7 @@ namespace neogfx
 		mutable glyph_text iGlyphTextCache;
 		mutable optional_size iTextExtent;
 		bool iMultiLine;
+		neogfx::alignment iAlignment;
 		optional_colour iTextColour;
 	};
 }

@@ -25,7 +25,7 @@
 namespace neogfx
 {
 	push_button::push_button(const std::string& aText, style_e aStyle) :
-		button(aText, (aStyle == ButtonStyleNormal ? alignment::Centre : alignment::Left) | alignment::VCentre),
+		button(aText, (aStyle == ButtonStyleNormal || aStyle == ButtonStyleButtonBox ? alignment::Centre : alignment::Left) | alignment::VCentre),
 		iAnimator(app::instance(), [this](neolib::callback_timer&){ animate(); }, 20, false), 
 		iAnimationFrame(0),
 		iStyle(aStyle)
@@ -35,11 +35,12 @@ namespace neogfx
 			set_margins(neogfx::margins(1.0, 2.0));
 			layout().set_margins(neogfx::margins(0.0));
 			label().set_margins(neogfx::margins(0.0));
+			label().text().set_alignment(neogfx::alignment::Left | neogfx::alignment::VCentre);
 		}
 	}
 	
 	push_button::push_button(i_widget& aParent, const std::string& aText, style_e aStyle) :
-		button(aParent, aText, (aStyle == ButtonStyleNormal ? alignment::Centre : alignment::Left) | alignment::VCentre),
+		button(aParent, aText, (aStyle == ButtonStyleNormal || aStyle == ButtonStyleButtonBox ? alignment::Centre : alignment::Left) | alignment::VCentre),
 		iAnimator(app::instance(), [this](neolib::callback_timer&){ animate(); }, 20, false), 
 		iAnimationFrame(0),
 		iStyle(aStyle)
@@ -49,11 +50,12 @@ namespace neogfx
 			set_margins(neogfx::margins(1.0, 2.0));
 			layout().set_margins(neogfx::margins(0.0));
 			label().set_margins(neogfx::margins(0.0));
+			label().text().set_alignment(neogfx::alignment::Left | neogfx::alignment::VCentre);
 		}
 	}
 
 	push_button::push_button(i_layout& aLayout, const std::string& aText, style_e aStyle) :
-		button(aLayout, aText, (aStyle == ButtonStyleNormal ? alignment::Centre : alignment::Left) | alignment::VCentre),
+		button(aLayout, aText, (aStyle == ButtonStyleNormal || aStyle == ButtonStyleButtonBox ? alignment::Centre : alignment::Left) | alignment::VCentre),
 		iAnimator(app::instance(), [this](neolib::callback_timer&){ animate(); }, 20, false),
 		iAnimationFrame(0),
 		iStyle(aStyle)
@@ -63,43 +65,112 @@ namespace neogfx
 			set_margins(neogfx::margins(1.0, 2.0));
 			layout().set_margins(neogfx::margins(0.0));
 			label().set_margins(neogfx::margins(0.0));
+			label().text().set_alignment(neogfx::alignment::Left | neogfx::alignment::VCentre);
+		}
+	}
+
+	size push_button::minimum_size(const optional_size& aAvailableSpace) const
+	{
+		if (has_minimum_size())
+			return button::minimum_size(aAvailableSpace);
+		size result = button::minimum_size(aAvailableSpace);
+		if (iStyle == ButtonStyleButtonBox)
+		{
+			if (iStandardButtonWidth == boost::none || iStandardButtonWidth->first != label().text().font())
+			{
+				graphics_context gc(*this);
+				iStandardButtonWidth.emplace(label().text().font(), gc.text_extent("#StdButton", label().text().font()));
+				iStandardButtonWidth->second.cx += (result.cx - label().text().minimum_size(aAvailableSpace).cx);
+			}
+			result.cx = std::max(result.cx, iStandardButtonWidth->second.cx);
+		}
+		return result;
+	}
+
+	size push_button::maximum_size(const optional_size& aAvailableSpace) const
+	{
+		if (has_maximum_size())
+			return button::maximum_size(aAvailableSpace);
+		if (iStyle == ButtonStyleButtonBox)
+			return minimum_size(aAvailableSpace);
+		return button::maximum_size(aAvailableSpace);
+	}
+
+	void push_button::paint_non_client(graphics_context& aGraphicsContext) const
+	{
+		button::paint_non_client(aGraphicsContext);
+		if (iStyle == ButtonStyleToolbar && enabled() && (entered() || capturing()))
+		{
+			colour background = (capturing() && entered() ? 
+				app::instance().current_style().selection_colour() : 
+				background_colour().light() ? background_colour().darker(0x40) : background_colour().lighter(0x40));
+			background.set_alpha(0x80);
+			aGraphicsContext.fill_rect(client_rect(), background);
 		}
 	}
 
 	void push_button::paint(graphics_context& aGraphicsContext) const
 	{
 		colour faceColour = animation_colour();
-		colour borderColour = faceColour.darker(0x40);
-		colour innerBorderColour = faceColour.lighter(capturing() ? 0x20 : 0x40);
+		colour borderColour = border_mid_colour().darker(0x40);
+		colour innerBorderColour = border_mid_colour().lighter(capturing() ? 0x20 : 0x40);
 		scoped_units su(*this, UnitsPixels);
-		path outline = get_path();
+		neogfx::path outline = path();
 		dimension penWidth = device_metrics().horizontal_dpi() / 96;
-		if (iStyle == ButtonStyleNormal)
+		if (iStyle == ButtonStyleNormal || iStyle == ButtonStyleButtonBox || iStyle == ButtonStyleTab || iStyle == ButtonStyleSpinBox)
 			outline.deflate(penWidth * 2.0, penWidth * 2.0);
 		aGraphicsContext.clip_to(outline);
 		colour topHalfFrom = faceColour.same_lightness_as(colour::White);
 		colour topHalfTo = faceColour;
-		colour bottomHalfFrom = faceColour.to_hsl().lighter(-0.125f).to_rgb(faceColour.alpha() / 255.0);
+		colour bottomHalfFrom = faceColour.to_hsl().lighter(-0.125).to_rgb(faceColour.alpha() / 255.0);
 		colour bottomHalfTo = faceColour;
-		if (!capturing())
+		if (iStyle != ButtonStyleTab && iStyle != ButtonStyleSpinBox)
 		{
-			rect topHalf = outline.bounding_rect();
-			rect bottomHalf = topHalf;
-			topHalf.cy = std::floor(topHalf.cy * 0.5f);
-			bottomHalf.y = topHalf.bottom();
-			bottomHalf.cy -= topHalf.height();
-			aGraphicsContext.fill_gradient_rect(topHalf, gradient(topHalfFrom, topHalfTo));
-			aGraphicsContext.fill_gradient_rect(bottomHalf, gradient(bottomHalfFrom, bottomHalfTo));
+			if (!capturing())
+			{
+				if (!spot_colour())
+				{
+					rect topHalf = outline.bounding_rect();
+					rect bottomHalf = topHalf;
+					topHalf.cy = std::floor(topHalf.cy * 0.5);
+					bottomHalf.y = topHalf.bottom();
+					bottomHalf.cy -= topHalf.height();
+					aGraphicsContext.fill_rect(topHalf, gradient(topHalfFrom, topHalfTo));
+					aGraphicsContext.fill_rect(bottomHalf, gradient(bottomHalfFrom, bottomHalfTo));
+				}
+				else
+				{
+					aGraphicsContext.fill_rect(outline.bounding_rect(), faceColour);
+				}
+			}
+			else 
+			{
+				if (!spot_colour())
+				{
+					rect topHalf = outline.bounding_rect();
+					rect bottomHalf = topHalf;
+					topHalf.cy = std::floor(topHalf.cy * 0.5 + as_units(*this, UnitsMillimetres, 1.0));
+					bottomHalf.y = topHalf.bottom();
+					bottomHalf.cy -= topHalf.height();
+					aGraphicsContext.fill_rect(topHalf, gradient(topHalfFrom, topHalfTo));
+					aGraphicsContext.fill_rect(bottomHalf, gradient(bottomHalfFrom, bottomHalfTo));
+				}
+				else
+				{
+					aGraphicsContext.fill_rect(outline.bounding_rect(), faceColour);
+				}
+			}
 		}
 		else
 		{
-			rect topHalf = outline.bounding_rect();
-			rect bottomHalf = topHalf;
-			topHalf.cy = std::floor(topHalf.cy * 0.5f) + as_units(*this, UnitsMillimetres, 1.0);
-			bottomHalf.y = topHalf.bottom();
-			bottomHalf.cy -= topHalf.height();
-			aGraphicsContext.fill_gradient_rect(topHalf, gradient(topHalfFrom, topHalfTo));
-			aGraphicsContext.fill_gradient_rect(bottomHalf, gradient(bottomHalfFrom, bottomHalfTo));
+			if (!spot_colour())
+			{
+				aGraphicsContext.fill_rect(outline.bounding_rect(), gradient(topHalfTo, bottomHalfFrom));
+			}
+			else
+			{
+				aGraphicsContext.fill_rect(outline.bounding_rect(), faceColour);
+			}
 		}
 		aGraphicsContext.reset_clip();
 		if (has_focus())
@@ -108,7 +179,7 @@ namespace neogfx
 			focusRect.deflate(2.0, 2.0);
 			aGraphicsContext.draw_focus_rect(focusRect);
 		}
-		if (iStyle == ButtonStyleNormal)
+		if (iStyle == ButtonStyleNormal || iStyle == ButtonStyleButtonBox || iStyle == ButtonStyleTab || iStyle == ButtonStyleSpinBox)
 		{
 			outline.inflate(penWidth, penWidth);
 			aGraphicsContext.draw_path(outline, pen(innerBorderColour, penWidth));
@@ -131,14 +202,22 @@ namespace neogfx
 		update();
 	}
 
-	path push_button::get_path() const
+	rect push_button::path_bounding_rect() const
 	{
-		path ret;
+		return client_rect();
+	}
+
+	path push_button::path() const
+	{
+		neogfx::path ret;
 		size pixel = units_converter(*this).from_device_units(size(1.0, 1.0));
-		const neogfx::size& currentSize = client_rect().extents();
+		size currentSize = path_bounding_rect().extents();
 		switch (iStyle)
 		{
 		case ButtonStyleNormal:
+		case ButtonStyleButtonBox:
+		case ButtonStyleTab:
+		case ButtonStyleSpinBox:
 			ret.move_to(pixel.cx, 0, 12);
 			ret.line_to(currentSize.cx - pixel.cx, 0);
 			ret.line_to(currentSize.cx - pixel.cx, pixel.cy);
@@ -161,7 +240,18 @@ namespace neogfx
 			ret.line_to(0, 0);
 			break;
 		}
+		ret.set_position(path_bounding_rect().top_left());
 		return ret;
+	}
+
+	bool push_button::spot_colour() const
+	{
+		return false;
+	}
+
+	colour push_button::border_mid_colour() const
+	{
+		return animation_colour();
 	}
 
 	bool push_button::has_hover_colour() const

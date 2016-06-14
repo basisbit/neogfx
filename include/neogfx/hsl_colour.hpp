@@ -28,8 +28,6 @@ namespace neogfx
 	class hsl_colour
 	{
 	public:
-		struct bad_hsl_values : std::logic_error { bad_hsl_values() : std::logic_error("neogfx::hsl_colour::bad_hsl_values") {} };
-	public:
 		hsl_colour();
 		hsl_colour(double aHue, double aSaturation, double aLightness);
 		hsl_colour(const colour& aColour);

@@ -31,10 +31,10 @@ namespace neogfx
 	opengl_window::opengl_window(i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler) :
 		native_window(aRenderingEngine, aSurfaceManager),
 		iEventHandler(aEventHandler),
-		iRenderer(app::instance(), [this](neolib::callback_timer&){ render(); }, 1000 / 60, true),
-		iFrameRate(50),
+		iLogicalCoordinateSystem(neogfx::logical_coordinate_system::AutomaticGui),
+		iFrameRate(60),
+		iFrameCounter(0),
 		iLastFrameTime(0),
-		iRendered(false),
 		iRendering(false)
 	{
 #ifdef _WIN32
@@ -50,6 +50,40 @@ namespace neogfx
 	{
 	}
 
+	neogfx::logical_coordinate_system opengl_window::logical_coordinate_system() const
+	{
+		return iLogicalCoordinateSystem;
+	}
+
+	void opengl_window::set_logical_coordinate_system(neogfx::logical_coordinate_system aSystem)
+	{
+		iLogicalCoordinateSystem = aSystem;
+	}
+
+	const vector4& opengl_window::logical_coordinates() const
+	{
+		switch (iLogicalCoordinateSystem)
+		{
+		case neogfx::logical_coordinate_system::Specified:
+			return iLogicalCoordinates;
+		case neogfx::logical_coordinate_system::AutomaticGui:
+			return iLogicalCoordinates = vector4{ 0.0, extents().cy, extents().cx, 0.0 };
+		case neogfx::logical_coordinate_system::AutomaticGame:
+			return iLogicalCoordinates = vector4{ 0.0, 0.0, extents().cx, extents().cy };
+		}
+		return iLogicalCoordinates;
+	}
+
+	void opengl_window::set_logical_coordinates(const vector4& aCoordinates)
+	{
+		iLogicalCoordinates = aCoordinates;
+	}
+
+	uint64_t opengl_window::frame_counter() const
+	{
+		return iFrameCounter;
+	}
+
 	bool opengl_window::using_frame_buffer() const
 	{
 		return true;
@@ -60,51 +94,37 @@ namespace neogfx
 		iFrameRate = aFps;
 	}
 
-	void opengl_window::clear_rendering_flag()
+	void opengl_window::invalidate(const rect& aInvalidatedRect)
 	{
-		iRendered = false;
-	}
-
-	void opengl_window::invalidate_surface(const rect& aInvalidatedRect)
-	{
-		if (std::find(iInvalidatedRects.begin(), iInvalidatedRects.end(), aInvalidatedRect) == iInvalidatedRects.end())
-			iInvalidatedRects.push_back(aInvalidatedRect);
-	}
-
-	size opengl_window::extents() const
-	{
-		return surface_size();
-	}
-	
-	dimension opengl_window::horizontal_dpi() const
-	{
-		return iPixelDensityDpi.cx;
-	}
-	
-	dimension opengl_window::vertical_dpi() const
-	{
-		return iPixelDensityDpi.cy;
-	}
-
-	dimension opengl_window::em_size() const
-	{
-		return 0;
+		if (iInvalidatedRects.find(aInvalidatedRect) == iInvalidatedRects.end())
+			iInvalidatedRects.insert(aInvalidatedRect);
 	}
 
 	void opengl_window::render()
 	{
-		if (!iRenderer.waiting())
-			iRenderer.again();
-		if (iRendered || iRendering || processing_event() || iInvalidatedRects.empty())
+		if (iRendering || processing_event())
 			return;
+
 		uint64_t now = app::instance().program_elapsed_ms();
 		if (iFrameRate != boost::none && now - iLastFrameTime < 1000 / *iFrameRate)
 			return;
-		
+
+		if (!iEventHandler.native_window_ready_to_render())
+			return;
+
+		rendering_check.trigger();
+
+		if (iInvalidatedRects.empty())
+			return;
+
+		++iFrameCounter;
+
 		iRendering = true;
 		iLastFrameTime = now;
-		
-		rect invalidatedRect = iInvalidatedRects[0];
+
+		rendering.trigger();
+
+		rect invalidatedRect = *iInvalidatedRects.begin();
 		for (const auto& ir : iInvalidatedRects)
 		{
 			invalidatedRect = invalidatedRect.combine(ir);
@@ -112,7 +132,7 @@ namespace neogfx
 		iInvalidatedRects.clear();
 		invalidatedRect.cx = std::min(invalidatedRect.cx, surface_size().cx - invalidatedRect.x);
 		invalidatedRect.cy = std::min(invalidatedRect.cy, surface_size().cy - invalidatedRect.y);
-		
+
 		static bool initialized = false;
 		if (!initialized)
 		{
@@ -125,10 +145,11 @@ namespace neogfx
 		glCheck(glViewport(0, 0, static_cast<GLsizei>(extents().cx), static_cast<GLsizei>(extents().cy)));
 		glCheck(glMatrixMode(GL_PROJECTION));
 		glCheck(glLoadIdentity());
-		glCheck(glScalef(1.0, -1.0, 1.0));
+		glCheck(glScalef(1.0, 1.0, 1.0));
 		glCheck(glMatrixMode(GL_MODELVIEW));
 		glCheck(glLoadIdentity());
-		glCheck(glOrtho(0.0, extents().cx, 0.0, extents().cy, -1.0, 1.0));
+		const auto& logicalCoordinates = logical_coordinates();
+		glCheck(glOrtho(logicalCoordinates[0], logicalCoordinates[2], logicalCoordinates[1], logicalCoordinates[3], -1.0, 1.0));
 		glCheck(glEnableClientState(GL_VERTEX_ARRAY));
 		glCheck(glEnableClientState(GL_COLOR_ARRAY));
 		glCheck(glEnableClientState(GL_TEXTURE_COORD_ARRAY));
@@ -179,18 +200,55 @@ namespace neogfx
 
 		display();
 		deactivate_context();
-		
+
 		iRendering = false;
-		iRendered = true;
+
+		rendering_finished.trigger();
 	}
 
-	bool opengl_window::rendered() const
+	bool opengl_window::is_rendering() const
 	{
-		return iRendered;
+		return iRendering;
+	}
+
+	size opengl_window::extents() const
+	{
+		return surface_size();
+	}
+
+	dimension opengl_window::horizontal_dpi() const
+	{
+		return iPixelDensityDpi.cx;
+	}
+
+	dimension opengl_window::vertical_dpi() const
+	{
+		return iPixelDensityDpi.cy;
+	}
+
+	dimension opengl_window::em_size() const
+	{
+		return 0;
 	}
 
 	i_native_window_event_handler& opengl_window::event_handler() const
 	{
 		return iEventHandler;
+	}
+
+	void opengl_window::destroying()
+	{
+		activate_context();
+		if (iFrameBufferSize != size{})
+		{
+			glCheck(glDeleteRenderbuffers(1, &iDepthStencilBuffer));
+			glCheck(glDeleteTextures(1, &iFrameBufferTexture));
+			glCheck(glDeleteFramebuffers(1, &iFrameBuffer));
+		}
+		deactivate_context();
+	}
+
+	void opengl_window::destroyed()
+	{
 	}
 }

@@ -21,25 +21,24 @@
 #include "i_surface.hpp"
 #include "i_native_surface.hpp"
 #include "i_native_graphics_context.hpp"
+#include "i_native_font_face.hpp"
+#include "i_texture.hpp"
 #include "i_widget.hpp"
 
 namespace neogfx
 {
-	struct graphics_context::glyph_drawing
+	graphics_context::glyph_drawing::glyph_drawing(const graphics_context& aParent) : iParent(aParent)
 	{
-		const graphics_context& iParent;
-		glyph_drawing(const graphics_context& aParent) : iParent(aParent)
-		{
-			if (++iParent.iDrawingGlyphs == 1)
-				iParent.iNativeGraphicsContext->begin_drawing_glyphs();
-		}
-		~glyph_drawing()
-		{
-			if (--iParent.iDrawingGlyphs == 0)
-				iParent.iNativeGraphicsContext->end_drawing_glyphs();
-		}
-	};
+		if (++iParent.iDrawingGlyphs == 1)
+			iParent.iNativeGraphicsContext->begin_drawing_glyphs();
+	}
 
+	graphics_context::glyph_drawing::~glyph_drawing()
+	{
+		if (--iParent.iDrawingGlyphs == 0)
+			iParent.iNativeGraphicsContext->end_drawing_glyphs();
+	}
+		
 	graphics_context::graphics_context(const i_surface& aSurface) :
 		iSurface(aSurface),
 		iNativeGraphicsContext(aSurface.native_surface().create_graphics_context()),
@@ -64,7 +63,7 @@ namespace neogfx
 
 	graphics_context::graphics_context(const i_widget& aWidget) :
 		iSurface(aWidget.surface()),
-		iNativeGraphicsContext(aWidget.surface().native_surface().create_graphics_context()),
+		iNativeGraphicsContext(aWidget.surface().native_surface().create_graphics_context(aWidget)),
 		iUnitsContext(*this),
 		iDefaultFont(aWidget.font()),
 		iOrigin(aWidget.origin()),
@@ -103,7 +102,17 @@ namespace neogfx
 		return units_converter(*this).to_device_units(aValue);
 	}
 
+	vec2 graphics_context::to_device_units(const vec2& aValue) const
+	{
+		return units_converter(*this).to_device_units(aValue);
+	}
+
 	rect graphics_context::to_device_units(const rect& aValue) const
+	{
+		return units_converter(*this).to_device_units(aValue);
+	}
+
+	texture_map graphics_context::to_device_units(const texture_map& aValue) const
 	{
 		return units_converter(*this).to_device_units(aValue);
 	}
@@ -138,6 +147,11 @@ namespace neogfx
 		return units_converter(*this).from_device_units(aValue);
 	}
 
+	texture_map graphics_context::from_device_units(const texture_map& aValue) const
+	{
+		return units_converter(*this).from_device_units(aValue);
+	}
+
 	path graphics_context::from_device_units(const path& aValue) const
 	{
 		path result = aValue;
@@ -146,6 +160,26 @@ namespace neogfx
 			for (std::size_t j = 0; j < result.paths()[i].size(); ++j)
 				result.paths()[i][j] = from_device_units(result.paths()[i][j]);
 		return result;
+	}
+
+	neogfx::logical_coordinate_system graphics_context::logical_coordinate_system() const
+	{
+		return iNativeGraphicsContext->logical_coordinate_system();
+	}
+
+	void graphics_context::set_logical_coordinate_system(neogfx::logical_coordinate_system aSystem) const
+	{
+		iNativeGraphicsContext->set_logical_coordinate_system(aSystem);
+	}
+
+	const vector4& graphics_context::logical_coordinates() const
+	{
+		return iNativeGraphicsContext->logical_coordinates();
+	}
+
+	void graphics_context::set_logical_coordinates(const vector4& aCoordinates) const
+	{
+		iNativeGraphicsContext->set_logical_coordinates(aCoordinates);
 	}
 
 	void graphics_context::set_default_font(const font& aDefaultFont) const
@@ -163,17 +197,21 @@ namespace neogfx
 		iOrigin = to_device_units(aOrigin);
 	}
 
-	const point& graphics_context::origin() const
+	point graphics_context::origin() const
 	{
 		return from_device_units(iOrigin);
 	}
 	
 	void graphics_context::set_pixel(const point& aPoint, const colour& aColour) const
 	{
+		/* todo */
+		(void)aPoint;
+		(void)aColour;
 	}
 
 	void graphics_context::draw_pixel(const point& aPoint, const colour& aColour) const
 	{
+		iNativeGraphicsContext->fill_rect(rect{ to_device_units(aPoint) + iOrigin, size{1.0, 1.0} }, aColour);
 	}
 
 	void graphics_context::draw_line(const point& aFrom, const point& aTo, const pen& aPen) const
@@ -186,9 +224,19 @@ namespace neogfx
 		iNativeGraphicsContext->draw_rect(to_device_units(aRect) + iOrigin, aPen);
 	}
 
+	void graphics_context::draw_rounded_rect(const rect& aRect, dimension aRadius, const pen& aPen) const
+	{
+		iNativeGraphicsContext->draw_rounded_rect(to_device_units(aRect) + iOrigin, aRadius, aPen);
+	}
+
 	void graphics_context::draw_circle(const point& aCentre, dimension aRadius, const pen& aPen) const
 	{
 		iNativeGraphicsContext->draw_circle(to_device_units(aCentre) + iOrigin, aRadius, aPen);
+	}
+
+	void graphics_context::draw_arc(const point& aCentre, dimension aRadius, angle aStartAngle, angle aEndAngle, const pen& aPen) const
+	{
+		iNativeGraphicsContext->draw_arc(to_device_units(aCentre) + iOrigin, aRadius, aStartAngle, aEndAngle, aPen);
 	}
 
 	void graphics_context::draw_path(const path& aPath, const pen& aPen) const
@@ -207,19 +255,52 @@ namespace neogfx
 		pop_logical_operation();
 	}
 
-	void graphics_context::fill_solid_rect(const rect& aRect, const colour& aColour) const
+	void graphics_context::fill_rect(const rect& aRect, const colour& aColour) const
 	{
-		iNativeGraphicsContext->fill_solid_rect(to_device_units(aRect) + iOrigin, aColour);
+		iNativeGraphicsContext->fill_rect(to_device_units(aRect) + iOrigin, aColour);
 	}
 
-	void graphics_context::fill_gradient_rect(const rect& aRect, const gradient& aGradient) const
+	void graphics_context::fill_rect(const rect& aRect, const gradient& aGradient) const
 	{
-		iNativeGraphicsContext->fill_gradient_rect(to_device_units(aRect) + iOrigin, aGradient);
+		iNativeGraphicsContext->fill_rect(to_device_units(aRect) + iOrigin, aGradient);
 	}
 
-	void graphics_context::fill_solid_circle(const point& aCentre, dimension aRadius, const colour& aColour) const
+	void graphics_context::fill_rounded_rect(const rect& aRect, dimension aRadius, const colour& aColour) const
 	{
-		iNativeGraphicsContext->fill_solid_circle(to_device_units(aCentre) + iOrigin, aRadius, aColour);
+		iNativeGraphicsContext->fill_rounded_rect(to_device_units(aRect) + iOrigin, aRadius, aColour);
+	}
+
+	void graphics_context::fill_rounded_rect(const rect& aRect, dimension aRadius, const gradient& aGradient) const
+	{
+		iNativeGraphicsContext->fill_rounded_rect(to_device_units(aRect) + iOrigin, aRadius, aGradient);
+	}
+
+	void graphics_context::fill_circle(const point& aCentre, dimension aRadius, const colour& aColour) const
+	{
+		iNativeGraphicsContext->fill_circle(to_device_units(aCentre) + iOrigin, aRadius, aColour);
+	}
+
+	void graphics_context::fill_arc(const point& aCentre, dimension aRadius, angle aStartAngle, angle aEndAngle, const colour& aColour) const
+	{
+		iNativeGraphicsContext->fill_arc(to_device_units(aCentre) + iOrigin, aRadius, aStartAngle, aEndAngle, aColour);
+	}
+
+	void graphics_context::fill_shape(const point& aCentre, const vertex_list2& aVertices, const colour& aColour) const
+	{
+		vertex_list2 vertices;
+		vertices.reserve(aVertices.size());
+		for (const auto& v : aVertices)
+			vertices.push_back(to_device_units(v) + iOrigin.to_vector());
+		iNativeGraphicsContext->fill_shape(to_device_units(aCentre) + iOrigin, vertices, aColour);
+	}
+
+	void graphics_context::fill_shape(const point& aCentre, const vertex_list3& aVertices, const colour& aColour) const
+	{
+		vertex_list2 vertices;
+		vertices.reserve(aVertices.size());
+		for (const auto& v : aVertices)
+			vertices.push_back(to_device_units(v.xy) + iOrigin.to_vector());
+		iNativeGraphicsContext->fill_shape(to_device_units(aCentre) + iOrigin, vertices, aColour);
 	}
 
 	void graphics_context::fill_and_draw_path(const path& aPath, const colour& aFillColour, const pen& aOutlinePen) const
@@ -229,12 +310,12 @@ namespace neogfx
 		iNativeGraphicsContext->fill_and_draw_path(path, aFillColour, aOutlinePen);
 	}
 
-	size graphics_context::text_extent(const text& aText, const font& aFont, bool aUseCache) const
+	size graphics_context::text_extent(const string& aText, const font& aFont, bool aUseCache) const
 	{
 		return text_extent(aText.begin(), aText.end(), aFont, aUseCache);
 	}
 
-	size graphics_context::text_extent(text::const_iterator aTextBegin, text::const_iterator aTextEnd, const font& aFont, bool aUseCache) const
+	size graphics_context::text_extent(string::const_iterator aTextBegin, string::const_iterator aTextEnd, const font& aFont, bool aUseCache) const
 	{
 		const auto& glyphText = aUseCache && !iGlyphTextCache->empty() ? *iGlyphTextCache : to_glyph_text(aTextBegin, aTextEnd, aFont);
 		if (aUseCache && iGlyphTextCache->empty())
@@ -242,12 +323,12 @@ namespace neogfx
 		return from_device_units(size(glyphText.extents().cx, glyphText.extents().cy));
 	}
 
-	size graphics_context::multiline_text_extent(const text& aText, const font& aFont, bool aUseCache) const
+	size graphics_context::multiline_text_extent(const string& aText, const font& aFont, bool aUseCache) const
 	{
 		return multiline_text_extent(aText, aFont, 0, aUseCache);
 	}
 
-	size graphics_context::multiline_text_extent(const text& aText, const font& aFont, dimension aMaxWidth, bool aUseCache) const
+	size graphics_context::multiline_text_extent(const string& aText, const font& aFont, dimension aMaxWidth, bool aUseCache) const
 	{
 		const auto& glyphText = aUseCache && !iGlyphTextCache->empty() ? *iGlyphTextCache : to_glyph_text(aText.begin(), aText.end(), aFont);
 		if (aUseCache && iGlyphTextCache->empty())
@@ -312,12 +393,12 @@ namespace neogfx
 		return result;
 	}
 
-	glyph_text graphics_context::to_glyph_text(const text& aText, const font& aFont) const
+	glyph_text graphics_context::to_glyph_text(const string& aText, const font& aFont) const
 	{
 		return to_glyph_text(aText.begin(), aText.end(), aFont);
 	}
 
-	bool graphics_context::is_text_left_to_right(const text& aText, const font& aFont, bool aUseCache) const
+	bool graphics_context::is_text_left_to_right(const string& aText, const font& aFont, bool aUseCache) const
 	{
 		const auto& glyphText = aUseCache && !iGlyphTextCache->empty() ? *iGlyphTextCache : to_glyph_text(aText.begin(), aText.end(), aFont);
 		if (aUseCache && iGlyphTextCache->empty())
@@ -325,40 +406,31 @@ namespace neogfx
 		return glyph_text_direction(glyphText.cbegin(), glyphText.cend()) == text_direction::LTR;
 	}
 
-	bool graphics_context::is_text_right_to_left(const text& aText, const font& aFont, bool aUseCache) const
+	bool graphics_context::is_text_right_to_left(const string& aText, const font& aFont, bool aUseCache) const
 	{
 		return !is_text_left_to_right(aText, aFont, aUseCache);
 	}
 
-	void graphics_context::draw_text(const point& aPoint, const text& aText, const font& aFont, const colour& aColour, bool aUseCache) const
+	void graphics_context::draw_text(const point& aPoint, const string& aText, const font& aFont, const colour& aColour, bool aUseCache) const
 	{
-		glyph_drawing gd(*this);
 		draw_text(aPoint, aText.begin(), aText.end(), aFont, aColour, aUseCache);
 	}
 
-	void graphics_context::draw_text(const point& aPoint, text::const_iterator aTextBegin, text::const_iterator aTextEnd, const font& aFont, const colour& aColour, bool aUseCache) const
+	void graphics_context::draw_text(const point& aPoint, string::const_iterator aTextBegin, string::const_iterator aTextEnd, const font& aFont, const colour& aColour, bool aUseCache) const
 	{
-		glyph_drawing gd(*this);
 		const auto& glyphText = aUseCache && !iGlyphTextCache->empty() ? *iGlyphTextCache : to_glyph_text(aTextBegin, aTextEnd, aFont);
 		if (aUseCache && iGlyphTextCache->empty())
 			*iGlyphTextCache = glyphText;
-		point pt = aPoint;
-		for (glyph_text::const_iterator i = glyphText.cbegin(); i != glyphText.cend(); ++i)
-		{
-			draw_glyph(pt, *i, aFont, aColour);
-			pt.x += from_device_units(size(i->extents().cx, 0.0)).cx;
-		}
+		draw_glyph_text(aPoint, glyphText, aFont, aColour);
 	}
 
-	void graphics_context::draw_multiline_text(const point& aPoint, const text& aText, const font& aFont, const colour& aColour, alignment aAlignment, bool aUseCache) const
+	void graphics_context::draw_multiline_text(const point& aPoint, const string& aText, const font& aFont, const colour& aColour, alignment aAlignment, bool aUseCache) const
 	{
-		glyph_drawing gd(*this);
 		draw_multiline_text(aPoint, aText, aFont, 0, aColour, aAlignment, aUseCache);
 	}
 
-	void graphics_context::draw_multiline_text(const point& aPoint, const text& aText, const font& aFont, dimension aMaxWidth, const colour& aColour, alignment aAlignment, bool aUseCache) const
+	void graphics_context::draw_multiline_text(const point& aPoint, const string& aText, const font& aFont, dimension aMaxWidth, const colour& aColour, alignment aAlignment, bool aUseCache) const
 	{
-		glyph_drawing gd(*this);
 		const auto& glyphText = aUseCache && !iGlyphTextCache->empty() ? *iGlyphTextCache : to_glyph_text(aText.begin(), aText.end(), aFont);
 		if (aUseCache && iGlyphTextCache->empty())
 			*iGlyphTextCache = glyphText;
@@ -367,29 +439,30 @@ namespace neogfx
 		lines_t lines;
 		std::array<glyph, 2> delimeters = { glyph(text_direction::Whitespace, '\r'), glyph(text_direction::Whitespace, '\n') };
 		neolib::tokens(glyphText.cbegin(), glyphText.cend(), delimeters.begin(), delimeters.end(), lines, 0, false);
-		point pos = aPoint;
 		size textExtent = multiline_text_extent(aText, aFont, aMaxWidth, aUseCache);
+		point pos = aPoint;
 		for (lines_t::const_iterator i = lines.begin(); i != lines.end(); ++i)
 		{
+			const auto& line = (logical_coordinates()[1] > logical_coordinates()[3] ? *i : *(lines.rbegin() + (i - lines.begin())));
 			if (aMaxWidth == 0)
 			{
 				point linePos = pos;
-				size lineExtent = from_device_units(glyph_text::extents(aFont, i->first, i->second));
-				if (glyph_text_direction(i->first, i->second) == text_direction::RTL)
+				size lineExtent = from_device_units(glyph_text::extents(aFont, line.first, line.second));
+				if (glyph_text_direction(line.first, line.second) == text_direction::RTL)
 					linePos.x += textExtent.cx - lineExtent.cx;
-				draw_glyph_text(linePos, glyphText, aFont, aColour);
+				draw_glyph_text(linePos, line.first, line.second, aFont, aColour);
 				pos.y += lineExtent.cy;
 			}
 			else
 			{
-				glyph_text::const_iterator next = i->first;
+				glyph_text::const_iterator next = line.first;
 				glyph_text::const_iterator lineStart = next;
-				glyph_text::const_iterator lineEnd = i->second;
+				glyph_text::const_iterator lineEnd = line.second;
 				dimension maxWidth = to_device_units(size(aMaxWidth, 0)).cx;
 				dimension lineWidth = 0;
-				bool gotLine = false;
-				while(next != i->second)
+				while(next != line.second)
 				{
+					bool gotLine = false;
 					if (lineWidth + next->extents().cx > maxWidth)
 					{
 						std::pair<glyph_text::const_iterator, glyph_text::const_iterator> wordBreak = glyphText.word_break(lineStart, next);
@@ -398,7 +471,7 @@ namespace neogfx
 						next = wordBreak.second;
 						if (lineEnd == next)
 						{
-							while(lineEnd != i->second && (lineEnd + 1)->source() == wordBreak.first->source())
+							while(lineEnd != line.second && (lineEnd + 1)->source() == wordBreak.first->source())
 								++lineEnd;
 							next = lineEnd;
 						}
@@ -409,41 +482,35 @@ namespace neogfx
 						lineWidth += next->extents().cx;
 						++next;
 					}
-					if (gotLine || next == i->second)
+					if (gotLine || next == line.second)
 					{
 						point linePos = pos;
 						if (aAlignment == alignment::Left && glyph_text_direction(lineStart, next) == text_direction::RTL ||
 							aAlignment == alignment::Right && glyph_text_direction(lineStart, next) == text_direction::LTR)
 							linePos.x += textExtent.cx - from_device_units(size(lineWidth, 0)).cx;
 						else if (aAlignment == alignment::Centre)
-							linePos.x += (textExtent.cx - from_device_units(size(lineWidth, 0)).cx) / 2;
+							linePos.x += std::ceil((textExtent.cx - from_device_units(size(lineWidth, 0)).cx) / 2);
 						draw_glyph_text(linePos, lineStart, lineEnd, aFont, aColour);
 						pos.y += glyph_text::extents(aFont, lineStart, lineEnd).cy;
 						lineStart = next;
-						lineEnd = i->second;
+						lineEnd = line.second;
 						lineWidth = 0;
-						gotLine = false;
 					}
 				}
+				if (line.first == line.second)
+					pos.y += font().height();
 			}
 		}
 	}
 
 	void graphics_context::draw_glyph_text(const point& aPoint, const glyph_text& aText, const font& aFont, const colour& aColour) const
 	{
-		glyph_drawing gd(*this);
 		draw_glyph_text(aPoint, aText.cbegin(), aText.cend(), aFont, aColour);
 	}
 
 	void graphics_context::draw_glyph_text(const point& aPoint, glyph_text::const_iterator aTextBegin, glyph_text::const_iterator aTextEnd, const font& aFont, const colour& aColour) const
 	{
-		glyph_drawing gd(*this);
-		point pos = aPoint;
-		for (glyph_text::const_iterator i = aTextBegin; i != aTextEnd; ++i)
-		{
-			draw_glyph(pos + i->offset(), *i, aFont, aColour);
-			pos.x += i->extents().cx;
-		}
+		neogfx::draw_glyph_text(*this, aPoint, aTextBegin, aTextEnd, aFont, aColour);
 	}
 
 	size graphics_context::extents() const
@@ -510,6 +577,7 @@ namespace neogfx
 	void graphics_context::clip_to(const path& aPath, dimension aPathOutline) const
 	{
 		path path = to_device_units(aPath);
+		path.set_shape(path::ConvexPolygon);
 		path.set_position(path.position() + iOrigin);
 		iNativeGraphicsContext->clip_to(path, aPathOutline);
 	}
@@ -527,6 +595,16 @@ namespace neogfx
 	smoothing_mode_e graphics_context::set_smoothing_mode(smoothing_mode_e aSmoothingMode) const
 	{
 		return iNativeGraphicsContext->set_smoothing_mode(aSmoothingMode);
+	}
+
+	bool graphics_context::monochrome() const
+	{
+		return iNativeGraphicsContext->monochrome();
+	}
+	
+	void graphics_context::set_monochrome(bool aMonochrome)
+	{
+		iNativeGraphicsContext->set_monochrome(aMonochrome);
 	}
 
 	void graphics_context::push_logical_operation(logical_operation_e aLogicalOperation) const
@@ -554,18 +632,39 @@ namespace neogfx
 		if (origin() == point{} && extents() == iSurface.extents())
 			iNativeGraphicsContext->clear(aColour);
 		else
-			fill_solid_rect(rect{origin(), extents()}, aColour);
+			fill_rect(rect{origin(), extents()}, aColour);
 	}
 
-	glyph_text graphics_context::to_glyph_text(text::const_iterator aTextBegin, text::const_iterator aTextEnd, const font& aFont) const
+	glyph_text graphics_context::to_glyph_text(string::const_iterator aTextBegin, string::const_iterator aTextEnd, const font& aFont) const
 	{
 		return iNativeGraphicsContext->to_glyph_text(aTextBegin, aTextEnd, aFont);
 	}
 
+	glyph_text graphics_context::to_glyph_text(string::const_iterator aTextBegin, string::const_iterator aTextEnd, std::function<font(std::string::size_type)> aFontSelector) const
+	{
+		return iNativeGraphicsContext->to_glyph_text(aTextBegin, aTextEnd, aFontSelector);
+	}
+
 	void graphics_context::draw_glyph(const point& aPoint, const glyph& aGlyph, const font& aFont, const colour& aColour) const
 	{
-		glyph_drawing gd(*this);
-		iNativeGraphicsContext->draw_glyph(to_device_units(aPoint) + iOrigin, aGlyph, aFont, aColour);
+		{
+			glyph_drawing gd(*this);
+			iNativeGraphicsContext->draw_glyph(to_device_units(aPoint) + iOrigin, aGlyph, aFont, aColour);
+		}
+		if (iDrawingGlyphs == 0 && (aGlyph.underline() || (mnemonics_shown() && aGlyph.mnemonic())))
+			draw_glyph_underline(aPoint, aGlyph, aFont, aColour);
+	}
+
+	void graphics_context::draw_glyph_underline(const point& aPoint, const glyph& aGlyph, const font& aFont, const colour& aColour) const
+	{
+		auto yLine = logical_coordinates()[1] > logical_coordinates()[3] ?
+			(aFont.height() + aFont.descender()) - std::ceil(aFont.native_font_face().underline_position()) :
+			-aFont.descender() + std::ceil(aFont.native_font_face().underline_position());
+		const i_glyph_texture& glyphTexture = !aGlyph.use_fallback() ? aFont.native_font_face().glyph_texture(aGlyph) : aFont.fallback().native_font_face().glyph_texture(aGlyph);
+		draw_line(
+			aPoint + point{ glyphTexture.placement().x, yLine },
+			aPoint + point{ glyphTexture.placement().x + glyphTexture.extents().cx, yLine },
+			pen{ aColour, std::ceil(aFont.native_font_face().underline_thickness()) });
 	}
 
 	void graphics_context::set_glyph_text_cache(glyph_text& aGlyphTextCache) const
@@ -576,5 +675,50 @@ namespace neogfx
 	void graphics_context::reset_glyph_text_cache() const
 	{
 		iGlyphTextCache = 0;
+	}
+
+	void graphics_context::set_mnemonic(bool aShowMnemonics, char aMnemonicPrefix) const
+	{
+		iNativeGraphicsContext->set_mnemonic(aShowMnemonics, aMnemonicPrefix);
+	}
+
+	void graphics_context::unset_mnemonic() const
+	{
+		iNativeGraphicsContext->unset_mnemonic();
+	}
+
+	bool graphics_context::mnemonics_shown() const
+	{
+		return iNativeGraphicsContext->mnemonics_shown();
+	}
+
+	void graphics_context::draw_texture(const point& aPoint, const i_texture& aTexture, const optional_colour& aColour) const
+	{
+		iNativeGraphicsContext->draw_texture(rect{to_device_units(aPoint) + iOrigin, aTexture.extents()}.to_vector(), aTexture, rect(point(0.0, 0.0), aTexture.extents()), aColour);
+	}
+
+	void graphics_context::draw_texture(const rect& aRect, const i_texture& aTexture, const optional_colour& aColour) const
+	{
+		iNativeGraphicsContext->draw_texture((to_device_units(aRect) + iOrigin).to_vector(), aTexture, rect(point(0.0, 0.0), aTexture.extents()), aColour);
+	}
+
+	void graphics_context::draw_texture(const texture_map& aTextureMap, const i_texture& aTexture, const optional_colour& aColour) const
+	{
+		iNativeGraphicsContext->draw_texture(to_device_units(aTextureMap) + iOrigin.to_vector(), aTexture, rect(point(0.0, 0.0), aTexture.extents()), aColour);
+	}
+
+	void graphics_context::draw_texture(const point& aPoint, const i_texture& aTexture, const rect& aTextureRect, const optional_colour& aColour) const
+	{
+		iNativeGraphicsContext->draw_texture(rect{to_device_units(aPoint) + iOrigin, aTexture.extents()}.to_vector(), aTexture, aTextureRect, aColour);
+	}
+
+	void graphics_context::draw_texture(const rect& aRect, const i_texture& aTexture, const rect& aTextureRect, const optional_colour& aColour) const
+	{
+		iNativeGraphicsContext->draw_texture((to_device_units(aRect) + iOrigin).to_vector(), aTexture, aTextureRect, aColour);
+	}
+
+	void graphics_context::draw_texture(const texture_map& aTextureMap, const i_texture& aTexture, const rect& aTextureRect, const optional_colour& aColour) const
+	{
+		iNativeGraphicsContext->draw_texture(to_device_units(aTextureMap) + iOrigin.to_vector(), aTexture, aTextureRect, aColour);
 	}
 }

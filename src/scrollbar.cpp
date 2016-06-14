@@ -23,9 +23,10 @@
 
 namespace neogfx
 {
-	scrollbar::scrollbar(i_scrollbar_container& aContainer, type_e aType, bool aIntegerPositions) :
+	scrollbar::scrollbar(i_scrollbar_container& aContainer, type_e aType, style_e aStyle, bool aIntegerPositions) :
 		iContainer(aContainer), 
 		iType(aType), 
+		iStyle(aStyle),
 		iIntegerPositions(aIntegerPositions),
 		iVisible(false),
 		iPosition(0.0),
@@ -42,6 +43,11 @@ namespace neogfx
 	scrollbar::type_e scrollbar::type() const
 	{
 		return iType;
+	}
+
+	scrollbar::style_e scrollbar::style() const
+	{
+		return iStyle;
 	}
 
 	void scrollbar::show()
@@ -146,9 +152,16 @@ namespace neogfx
 
 	dimension scrollbar::width(const i_units_context& aContext) const
 	{
+		if (style() == Invisible)
+			return 0.0;
 		units_converter uc(aContext);
 		uc.set_units(UnitsMillimetres);
 		dimension w = std::ceil(uc.to_device_units(4.0));
+		if (style() == Button)
+		{
+			const dimension margin = 3.0;
+			w -= margin * 2.0;
+		}
 		if (static_cast<uint32_t>(w) % 2 == 0)
 			++w;
 		uc.set_units(uc.saved_units());
@@ -164,7 +177,8 @@ namespace neogfx
 		colour baseColour = iContainer.scrollbar_colour(*this);
 		colour backgroundColour = baseColour.light() ? baseColour.darker(0x40) : baseColour.lighter(0x40);
 		colour foregroundColour = baseColour.light() ? baseColour.darker(0x80) : baseColour.lighter(0x80);
-		aGraphicsContext.fill_solid_rect(iContainer.scrollbar_geometry(aGraphicsContext, *this), backgroundColour);
+		if (style() == Normal)
+			aGraphicsContext.fill_rect(iContainer.scrollbar_geometry(aGraphicsContext, *this), backgroundColour);
 		const dimension margin = 3.0;
 		rect rectUpButton = element_geometry(aGraphicsContext, ElementUpButton).deflate(margin, margin);
 		rect rectDownButton = element_geometry(aGraphicsContext, ElementDownButton).deflate(margin, margin);
@@ -174,10 +188,10 @@ namespace neogfx
 			coordinate w = 1.0;
 			for (coordinate y = 0.0; y < rectUpButton.height(); ++y)
 			{
-				aGraphicsContext.fill_solid_rect(rect(point(x, std::floor(y + rectUpButton.top())), size(w, 1.0)), baseColour.light() ?
+				aGraphicsContext.fill_rect(rect(point(x, std::floor(y + rectUpButton.top())), size(w, 1.0)), baseColour.light() ?
 					foregroundColour.darker(position() == minimum() ? 0x00 : iClickedElement == ElementUpButton ? 0x60 : iHoverElement == ElementUpButton ? 0x30 : 0x00) :
 					foregroundColour.lighter(position() == minimum() ? 0x00 : iClickedElement == ElementUpButton ? 0x60 : iHoverElement == ElementUpButton ? 0x30 : 0x00));
-				aGraphicsContext.fill_solid_rect(rect(point(x, std::floor(rectDownButton.bottom() - y)), size(w, 1.0)), baseColour.light() ?
+				aGraphicsContext.fill_rect(rect(point(x, std::floor(rectDownButton.bottom() - y)), size(w, 1.0)), baseColour.light() ?
 					foregroundColour.darker(position() == maximum() - page() ? 0x00 : iClickedElement == ElementDownButton ? 0x60 : iHoverElement == ElementDownButton ? 0x30 : 0x00) :
 					foregroundColour.lighter(position() == maximum() - page() ? 0x00 : iClickedElement == ElementDownButton ? 0x60 : iHoverElement == ElementDownButton ? 0x30 : 0x00));
 				x -= 1.0;
@@ -190,19 +204,20 @@ namespace neogfx
 			coordinate h = 1.0;
 			for (coordinate x = 0.0; x < rectUpButton.width(); ++x)
 			{
-				aGraphicsContext.fill_solid_rect(rect(point(std::floor(x + rectUpButton.left()), y), size(1.0, h)), baseColour.light() ?
+				aGraphicsContext.fill_rect(rect(point(std::floor(x + rectUpButton.left()), y), size(1.0, h)), baseColour.light() ?
 					foregroundColour.darker(position() == minimum() ? 0x00 : iClickedElement == ElementUpButton ? 0x60 : iHoverElement == ElementUpButton ? 0x30 : 0x00) :
 					foregroundColour.lighter(position() == minimum() ? 0x00 : iClickedElement == ElementUpButton ? 0x60 : iHoverElement == ElementUpButton ? 0x30 : 0x00));
-				aGraphicsContext.fill_solid_rect(rect(point(std::floor(rectDownButton.right() - x), y), size(1.0, h)), baseColour.light() ?
+				aGraphicsContext.fill_rect(rect(point(std::floor(rectDownButton.right() - x), y), size(1.0, h)), baseColour.light() ?
 					foregroundColour.darker(position() == maximum() - page() ? 0x00 : iClickedElement == ElementDownButton ? 0x60 : iHoverElement == ElementDownButton ? 0x30 : 0x00) :
 					foregroundColour.lighter(position() == maximum() - page() ? 0x00 : iClickedElement == ElementDownButton ? 0x60 : iHoverElement == ElementDownButton ? 0x30 : 0x00));
 				y -= 1.0;
 				h += 2.0;
 			}
 		}
-		aGraphicsContext.fill_solid_rect(element_geometry(aGraphicsContext, ElementThumb).deflate(iType == Vertical ? margin : 0.0, iType == Vertical ? 0.0 : margin), baseColour.light() ?
-			foregroundColour.darker(iClickedElement == ElementThumb ? 0x60 : iHoverElement == ElementThumb ? 0x30 : 0x00) :
-			foregroundColour.lighter(iClickedElement == ElementThumb ? 0x60 : iHoverElement == ElementThumb ? 0x30 : 0x00));
+		if (style() == Normal)
+			aGraphicsContext.fill_rect(element_geometry(aGraphicsContext, ElementThumb).deflate(iType == Vertical ? margin : 0.0, iType == Vertical ? 0.0 : margin), baseColour.light() ?
+				foregroundColour.darker(iClickedElement == ElementThumb ? 0x60 : iHoverElement == ElementThumb ? 0x30 : 0x00) :
+				foregroundColour.lighter(iClickedElement == ElementThumb ? 0x60 : iHoverElement == ElementThumb ? 0x30 : 0x00));
 		aGraphicsContext.set_origin(oldOrigin);
 	}
 
@@ -215,20 +230,46 @@ namespace neogfx
 		{
 		case ElementUpButton:
 			if (iType == Vertical)
-				g.cy = std::ceil((g.cx - margin * 2.0) / 2.0 + margin * 2.0);
+			{
+				if (iStyle == Normal)
+					g.cy = std::ceil((g.cx - margin * 2.0) / 2.0 + margin * 2.0);
+				else
+					g.cy = std::ceil(width(aContext));
+			}
 			else
-				g.cx = std::ceil((g.cy - margin * 2.0) / 2.0 + margin * 2.0);
+			{
+				if (iStyle == Normal)
+					g.cx = std::ceil((g.cy - margin * 2.0) / 2.0 + margin * 2.0);
+				else
+					g.cx = std::ceil(width(aContext));
+			}
 			break;
 		case ElementDownButton:
 			if (iType == Vertical)
 			{
-				g.y = g.bottom() - std::ceil((g.cx - margin * 2.0) / 2.0 + margin * 2.0);
-				g.cy = std::ceil((g.cx - margin * 2.0) / 2.0 + margin * 2.0);
+				if (iStyle == Normal)
+				{
+					g.y = g.bottom() - std::ceil((g.cx - margin * 2.0) / 2.0 + margin * 2.0);
+					g.cy = std::ceil((g.cx - margin * 2.0) / 2.0 + margin * 2.0);
+				}
+				else
+				{
+					g.y = g.bottom() - std::ceil(width(aContext));
+					g.cy = std::ceil(width(aContext));
+				}
 			}
 			else
 			{
-				g.x = g.right() - std::ceil((g.cy - margin * 2.0) / 2.0 + margin * 2.0);
-				g.cx = std::ceil((g.cy - margin * 2.0) / 2.0 + margin * 2.0);
+				if (iStyle == Normal)
+				{
+					g.x = g.right() - std::ceil((g.cy - margin * 2.0) / 2.0 + margin * 2.0);
+					g.cx = std::ceil((g.cy - margin * 2.0) / 2.0 + margin * 2.0);
+				}
+				else
+				{
+					g.x = g.right() - std::ceil(width(aContext));
+					g.cx = std::ceil(width(aContext));
+				}
 			}
 			break;
 		case ElementPageUpArea:
@@ -315,25 +356,30 @@ namespace neogfx
 			return ElementUpButton;
 		else if (element_geometry(aContext, ElementDownButton).contains(aPosition))
 			return ElementDownButton;
-		else if (element_geometry(aContext, ElementPageUpArea).contains(aPosition))
-			return ElementPageUpArea;
-		else if (element_geometry(aContext, ElementPageDownArea).contains(aPosition))
-			return ElementPageDownArea;
-		else if (element_geometry(aContext, ElementThumb).contains(aPosition))
-			return ElementThumb;
+		else if (style() == Normal)
+		{
+			if (element_geometry(aContext, ElementPageUpArea).contains(aPosition))
+				return ElementPageUpArea;
+			else if (element_geometry(aContext, ElementPageDownArea).contains(aPosition))
+				return ElementPageDownArea;
+			else if (element_geometry(aContext, ElementThumb).contains(aPosition))
+				return ElementThumb;
+			else
+				return ElementNone;
+		}
 		else
 			return ElementNone;
 	}
 
 	void scrollbar::update(const i_units_context& aContext, const update_params_t& aUpdateParams)
 	{
-		if (clicked_element() != i_scrollbar::ElementNone && clicked_element() != element_at(aContext, iContainer.surface().mouse_position()))
+		if (clicked_element() != i_scrollbar::ElementNone && clicked_element() != element_at(aContext, iContainer.scrollbar_surface().mouse_position()))
 			pause();
 		else
 			resume();
 		if (clicked_element() == i_scrollbar::ElementThumb)
 		{
-			point delta = (aUpdateParams.is<point>() ? static_variant_cast<point>(aUpdateParams) : iContainer.surface().mouse_position()) - iThumbClickedPosition;
+			point delta = (aUpdateParams.is<point>() ? static_variant_cast<point>(aUpdateParams) : iContainer.scrollbar_surface().mouse_position()) - iThumbClickedPosition;
 			scoped_units su(aContext, UnitsPixels);
 			rect g = iContainer.scrollbar_geometry(aContext, *this);
 			if (iType == Vertical)
@@ -352,7 +398,7 @@ namespace neogfx
 			}
 		}
 		if (clicked_element() == i_scrollbar::ElementNone)
-			hover_element(element_at(aContext, iContainer.surface().mouse_position()));
+			hover_element(element_at(aContext, iContainer.scrollbar_surface().mouse_position()));
 		else
 			unhover_element();
 		iContainer.scrollbar_updated(*this, Updated);
@@ -411,7 +457,7 @@ namespace neogfx
 			}, 500);
 			break;
 		case ElementThumb:
-			iThumbClickedPosition = iContainer.surface().mouse_position();
+			iThumbClickedPosition = iContainer.scrollbar_surface().mouse_position();
 			iThumbClickedValue = position();
 			break;
 		default:
@@ -460,23 +506,23 @@ namespace neogfx
 	{
 		if (iScrollTrackPosition == boost::none)
 		{
-			iScrollTrackPosition = iContainer.surface().mouse_position();
+			iScrollTrackPosition = iContainer.scrollbar_surface().mouse_position();
 			iTimer = std::make_shared<neolib::callback_timer>(app::instance(), [this](neolib::callback_timer& aTimer)
 			{
 				aTimer.again();
-				point delta = iContainer.surface().mouse_position() - *iScrollTrackPosition;
-				scoped_units su(iContainer.surface(), UnitsPixels);
-				rect g = iContainer.scrollbar_geometry(iContainer.surface(), *this);
+				point delta = iContainer.scrollbar_surface().mouse_position() - *iScrollTrackPosition;
+				scoped_units su(iContainer.scrollbar_surface(), UnitsPixels);
+				rect g = iContainer.scrollbar_geometry(iContainer.scrollbar_surface(), *this);
 				if (iType == Vertical)
 				{
-					g.y = element_geometry(iContainer.surface(), ElementUpButton).bottom() + 1.0;
-					g.cy = element_geometry(iContainer.surface(), ElementDownButton).top() - 1.0 - g.y;
+					g.y = element_geometry(iContainer.scrollbar_surface(), ElementUpButton).bottom() + 1.0;
+					g.cy = element_geometry(iContainer.scrollbar_surface(), ElementDownButton).top() - 1.0 - g.y;
 					set_position(position() + static_cast<value_type>(delta.y * 0.25f / g.height()) * (maximum() - minimum()));
 				}
 				else
 				{
-					g.x = element_geometry(iContainer.surface(), ElementUpButton).right() + 1.0;
-					g.cx = element_geometry(iContainer.surface(), ElementDownButton).left() - 1.0 - g.x;
+					g.x = element_geometry(iContainer.scrollbar_surface(), ElementUpButton).right() + 1.0;
+					g.cx = element_geometry(iContainer.scrollbar_surface(), ElementDownButton).left() - 1.0 - g.x;
 					set_position(position() + static_cast<value_type>(delta.x * 0.25f / g.width()) * (maximum() - minimum()));
 				}
 			}, 50);

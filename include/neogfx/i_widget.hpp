@@ -23,7 +23,7 @@
 #include "i_geometry.hpp"
 #include "graphics_context.hpp"
 #include "mouse.hpp"
-#include "keyboard.hpp"
+#include "i_keyboard.hpp"
 
 namespace neogfx
 {
@@ -44,12 +44,16 @@ namespace neogfx
 		ConsumeReturnKey	= 0x20000000
 	};
 
-	class i_widget : public i_geometry, public i_units_context
+	class i_widget : public i_geometry, public i_units_context, public i_keyboard_handler
 	{
+	public:
+		event<> visibility_changed;
+		event<graphics_context&> painting;
 	public:
 		typedef std::vector<std::shared_ptr<i_widget>> widget_list;
 	public:
 		struct no_parent : std::logic_error { no_parent() : std::logic_error("neogfx::i_widget::no_parent") {} };
+		struct not_child : std::logic_error { not_child() : std::logic_error("neogfx::i_widget::not_child") {} };
 		struct no_update_rect : std::logic_error { no_update_rect() : std::logic_error("neogfx::i_widget::no_update_rect") {} };
 		struct widget_not_entered : std::logic_error { widget_not_entered() : std::logic_error("neogfx::i_widget::widget_not_entered") {} };
 		struct widget_not_capturing : std::logic_error { widget_not_capturing() : std::logic_error("neogfx::i_widget::widget_not_capturing") {} };
@@ -62,23 +66,24 @@ namespace neogfx
 	public:
 		virtual bool is_root() const = 0;
 		virtual bool has_parent() const = 0;
-		virtual void set_parent(i_widget& aParent) = 0;
 		virtual const i_widget& parent() const = 0;
 		virtual i_widget& parent() = 0;
-		virtual const i_widget& ultimate_ancestor() const = 0;
-		virtual i_widget& ultimate_ancestor() = 0;
-		virtual bool is_ancestor(const i_widget& aWidget) const = 0;
-		virtual bool is_sibling(const i_widget& aWidget) const = 0;
+		virtual void set_parent(i_widget& aParent) = 0;
+		virtual void parent_changed() = 0;
+		virtual const i_widget& ultimate_ancestor(bool aSameSurface = true) const = 0;
+		virtual i_widget& ultimate_ancestor(bool aSameSurface = true) = 0;
+		virtual bool is_ancestor_of(const i_widget& aWidget, bool aSameSurface = true) const = 0;
+		virtual bool is_descendent_of(const i_widget& aWidget, bool aSameSurface = true) const = 0;
+		virtual bool is_sibling_of(const i_widget& aWidget) const = 0;
 		virtual i_widget& link_before() const = 0;
 		virtual void set_link_before(i_widget& aWidget) = 0;
-		virtual void set_link_before_ptr(i_widget& aWidget) = 0;
 		virtual i_widget& link_after() const = 0;
 		virtual void set_link_after(i_widget& aWidget) = 0;
-		virtual void set_link_after_ptr(i_widget& aWidget) = 0;
 		virtual void unlink() = 0;
 		virtual void add_widget(i_widget& aWidget) = 0;
 		virtual void add_widget(std::shared_ptr<i_widget> aWidget) = 0;
 		virtual void remove_widget(i_widget& aWidget) = 0;
+		virtual void remove_widgets() = 0;
 		virtual const widget_list& children() const = 0;
 		virtual bool has_surface() const = 0;
 		virtual const i_surface& surface() const = 0;
@@ -94,8 +99,11 @@ namespace neogfx
 		virtual i_widget& managing_layout() = 0;
 		virtual bool is_managing_layout() const = 0;
 		virtual void layout_items(bool aDefer = false) = 0;
+		virtual void layout_items_started() = 0;
+		virtual bool layout_items_in_progress() const = 0;
 		virtual void layout_items_completed() = 0;
 	public:
+		virtual neogfx::logical_coordinate_system logical_coordinate_system() const = 0;
 		virtual point position() const = 0;
 		virtual point origin(bool aNonClient = false) const = 0;
 		virtual void move(const point& aPosition) = 0;
@@ -106,13 +114,13 @@ namespace neogfx
 		virtual rect window_rect() const = 0;
 		virtual rect client_rect(bool aIncludeMargins = true) const = 0;
 		virtual i_widget& widget_at(const point& aPosition) = 0;
-		virtual size size_hint() const = 0;
 	public:
 		virtual void update(bool aIncludeNonClient = false) = 0;
 		virtual void update(const rect& aUpdateRect) = 0;
 		virtual bool requires_update() const = 0;
 		virtual rect update_rect() const = 0;
 		virtual rect default_clip_rect(bool aIncludeNonClient = false) const = 0;
+		virtual bool ready_to_render() const = 0;
 		virtual void render(graphics_context& aGraphicsContext) const = 0;
 		virtual bool transparent_background() const = 0;
 		virtual void paint_non_client(graphics_context& aGraphicsContext) const = 0;
@@ -129,12 +137,16 @@ namespace neogfx
 		virtual void set_font(const optional_font& aFont) = 0;
 	public:
 		virtual bool visible() const = 0;
+		virtual bool effectively_visible() const = 0;
 		virtual bool hidden() const = 0;
+		virtual bool effectively_hidden() const = 0;
 		virtual void show(bool aVisible) = 0;
 		virtual void show() = 0;
 		virtual void hide() = 0;
 		virtual bool enabled() const = 0;
+		virtual bool effectively_enabled() const = 0;
 		virtual bool disabled() const = 0;
+		virtual bool effectively_disabled() const = 0;
 		virtual void enable(bool aEnable) = 0;
 		virtual void enable() = 0;
 		virtual void disable() = 0;
@@ -155,20 +167,30 @@ namespace neogfx
 		virtual bool ignore_mouse_events() const = 0;
 		virtual void set_ignore_mouse_events(bool aIgnoreMouseEvents) = 0;
 		virtual void mouse_wheel_scrolled(mouse_wheel aWheel, delta aDelta) = 0;
-		virtual void mouse_button_pressed(mouse_button aButton, const point& aPosition) = 0;
-		virtual void mouse_button_double_clicked(mouse_button aButton, const point& aPosition) = 0;
+		virtual void mouse_button_pressed(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers) = 0;
+		virtual void mouse_button_double_clicked(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers) = 0;
 		virtual void mouse_button_released(mouse_button aButton, const point& aPosition) = 0;
 		virtual void mouse_moved(const point& aPosition) = 0;
 		virtual void mouse_entered() = 0;
 		virtual void mouse_left() = 0;
-	public:
-		virtual void key_pressed(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers) = 0;
-		virtual void key_released(scan_code_e aScanCode, key_code_e aKeyCode, key_modifiers_e aKeyModifiers) = 0;
-		virtual void text_input(const std::string& aText) = 0;
+		virtual void set_default_mouse_cursor() = 0;
 	public:
 		virtual graphics_context create_graphics_context() const = 0;
 	protected:
 		virtual i_widget& widget_for_mouse_event(const point& aPosition) = 0;
+	private:
+		friend class widget;
+		virtual void set_link_before_ptr(i_widget& aWidget) = 0;
+		virtual void set_link_after_ptr(i_widget& aWidget) = 0;
+	// helpers
+	public:
+		bool same_surface(const i_widget& aWidget) const
+		{
+			if (has_surface() && aWidget.has_surface())
+				return &surface() == &aWidget.surface();
+			else
+				return false;
+		}
 	};
 
 	inline focus_policy operator|(focus_policy aLhs, focus_policy aRhs)

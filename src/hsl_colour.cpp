@@ -17,6 +17,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "neogfx.hpp"
 #include <neolib/string_utils.hpp>
 #include "colour.hpp"
 
@@ -107,7 +108,7 @@ namespace neogfx
 		else if (h2 >= 5.0 && h2 < 6.0)
 			r = c, g = 0.0, b = x;
 		else
-			throw bad_hsl_values();
+			r = g = b = 0.0;
 		double m = lightness() - 0.5f * c;
 		colour result(
 			static_cast<colour::component>(std::floor((r + m) * 255.0)),
@@ -134,7 +135,7 @@ namespace neogfx
 		else if (M == b)
 			h2 = (r - g) / c + 4.0;
 		else
-			throw bad_hsl_values();
+			h2 = undefined_hue();
 		if (h2 != undefined_hue())
 		{
 			hue = 60.0 * h2;

@@ -21,8 +21,8 @@
 
 #include "neogfx.hpp"
 #include "geometry.hpp"
-#include "text.hpp"
 #include "hsl_colour.hpp"
+#include "hsv_colour.hpp"
 
 namespace neogfx
 {
@@ -713,10 +713,10 @@ namespace neogfx
 		colour();
 		explicit colour(argb aValue);
 		colour(component aRed, component aGreen, component aBlue, component aAlpha = 0xFF);
-		colour(const text& aTextValue);
+		colour(const std::string& aTextValue);
 		// operations
 	public:
-		static colour from_name(const text& aName);
+		static colour from_name(const std::string& aName);
 		argb value() const;
 		component alpha() const;
 		component red() const;
@@ -730,11 +730,17 @@ namespace neogfx
 		T green() const { return static_cast<T>(green()) / 0xFF; }
 		template <typename T>
 		T blue() const { return static_cast<T>(blue()) / 0xFF; }
-		void set_alpha(component aNewValue);
-		void set_red(component aNewValue);
-		void set_green(component aNewValue);
-		void set_blue(component aNewValue);
+		colour& set_alpha(component aNewValue);
+		colour& set_red(component aNewValue);
+		colour& set_green(component aNewValue);
+		colour& set_blue(component aNewValue);
+		colour with_alpha(component aNewValue) const; 
+		colour with_red(component aNewValue) const;
+		colour with_green(component aNewValue) const;
+		colour with_blue(component aNewValue) const;
+		colour with_combined_alpha(component aNewValue) const;
 		hsl_colour to_hsl() const;
+		hsv_colour to_hsv() const;
 		double intensity() const;
 		bool similar_intensity(const colour& aOther, double aThreshold = 0.5);
 		colour mid(const colour& aOther) const;
@@ -753,6 +759,8 @@ namespace neogfx
 		colour operator~() const;
 		bool operator==(const colour& aOther) const;
 		bool operator!=(const colour& aOther) const;
+		bool operator<(const colour& aOther) const;
+		std::string to_string() const;
 		// attributes
 	private:
 		argb iValue;
@@ -780,15 +788,28 @@ namespace neogfx
 		{
 			Vertical,
 			Horizontal,
+			Radial
 		};
+	public:
+		struct bad_position : std::logic_error { bad_position() : std::logic_error("neogfx::gradient::bad_position") {} };
 		// construction
 	public:
 		gradient(const colour& aFrom, const colour& aTo, direction_e aDirection = Vertical);
+		gradient(const colour& aFromTo, direction_e aDirection = Vertical);
 		// operations
 	public:
 		colour at(coordinate aPos, coordinate aStart, coordinate aEnd) const;
 		colour at(double aPos) const;
+		const colour& from() const;
+		colour& from();
+		const colour& to() const;
+		colour& to();
+		gradient with_alpha(colour::component aAlpha) const;
+		gradient with_combined_alpha(colour::component aAlpha) const;
 		direction_e direction() const;
+		bool operator==(const gradient& aOther) const;
+		bool operator!=(const gradient& aOther) const;
+		bool operator<(const gradient& aOther) const;
 		// attributes
 	private:
 		colour iFrom;

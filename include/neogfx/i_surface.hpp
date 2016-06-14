@@ -20,31 +20,50 @@
 #pragma once
 
 #include "neogfx.hpp"
+#include <neolib/variant.hpp>
 #include "geometry.hpp"
 #include "graphics_context.hpp"
-#include "mouse.hpp"
+#include "i_native_surface.hpp"
 
 namespace neogfx
 {
-	class i_native_surface;
 	class i_widget;
+
+	enum class surface_type
+	{
+		Window,
+		Touchscreen,
+		Paper		// Printing support
+	};
 
 	class i_surface : public i_device_metrics, public i_units_context
 	{
 	public:
-		enum surface_type_e
-		{
-			SurfaceTypeWindow,
-			SurfaceTypeTouchscreen,
-			SurfaceTypePaper		// Printing support
-		};
+		event<const i_widget*> dismissing_children;
+		event<> closed;
 	public:
 		virtual ~i_surface() {}
 	public:
-		virtual surface_type_e surface_type() const = 0;
+		virtual bool is_weak() const = 0;
+		virtual void close() = 0;
+		virtual bool has_parent_surface() const = 0;
+		virtual const i_surface& parent_surface() const = 0;
+		virtual i_surface& parent_surface() = 0;
+		virtual bool is_owner_of(const i_surface& aChildSurface) const = 0;
+		virtual bool is_dismissing_children() const = 0;
+		virtual bool can_dismiss(const i_widget* aClickedWidget) const = 0;
+	public:
+		virtual neogfx::surface_type surface_type() const = 0;
+		virtual uint32_t style() const = 0;
+		virtual neogfx::logical_coordinate_system logical_coordinate_system() const = 0;
+		virtual void set_logical_coordinate_system(neogfx::logical_coordinate_system aSystem) = 0;
+		virtual const vector4& logical_coordinates() const = 0;
+		virtual void set_logical_coordinates(const vector4& aCoordinates) = 0;
 		virtual void layout_surface() = 0;
 		virtual void invalidate_surface(const rect& aInvalidatedRect, bool aInternal = true) = 0;
+		virtual void render_surface() = 0;
 		virtual graphics_context create_graphics_context() const = 0;
+		virtual graphics_context create_graphics_context(const i_widget& aWidget) const = 0;
 		virtual const i_native_surface& native_surface() const = 0;
 		virtual i_native_surface& native_surface() = 0;
 		virtual bool destroyed() const = 0;
@@ -64,6 +83,7 @@ namespace neogfx
 		virtual void widget_added(i_widget& aWidget) = 0;
 		virtual void widget_removed(i_widget& aWidget) = 0;
 	public:
+		virtual bool requires_owner_focus() const = 0;
 		virtual bool has_entered_widget() const = 0;
 		virtual i_widget& entered_widget() const = 0;
 		virtual bool has_capturing_widget() const = 0;

@@ -21,40 +21,53 @@
 
 #include "neogfx.hpp"
 #include <map>
+#include <boost/pool/pool_alloc.hpp>
 #include "layout.hpp"
+#include "vertical_layout.hpp"
+#include "horizontal_layout.hpp"
 
 namespace neogfx
 {
 	class grid_layout : public layout
 	{
 	public:
-		struct cell_occupied : std::logic_error { cell_occupied() : std::logic_error("neogfx::grid_layout::cell_occupied") {} };
 		struct cell_unoccupied : std::logic_error { cell_unoccupied() : std::logic_error("neogfx::grid_layout::cell_unoccupied") {} };
-	private:
+	public:
 		typedef uint32_t cell_coordinate;
-		typedef std::pair<cell_coordinate, cell_coordinate> cell_coordinates;
-		typedef std::map<cell_coordinates, item_list::iterator> cell_list;
+		typedef basic_point<cell_coordinate> cell_coordinates;
+		typedef basic_size<cell_coordinate> cell_dimensions;
+	private:
+		struct row_major;
+		struct column_major;
+		typedef std::map<cell_coordinates, item_list::iterator, std::less<cell_coordinates>, boost::pool_allocator<std::pair<cell_coordinates, item_list::iterator>>> cell_list;
+		typedef std::vector<std::pair<cell_coordinates, cell_coordinates>> span_list;
 	public:
 		grid_layout(i_widget& aParent);
 		grid_layout(i_layout& aParent);
 		grid_layout(cell_coordinate aRows, cell_coordinate aColumns, i_widget& aParent);
 		grid_layout(cell_coordinate aRows, cell_coordinate aColumns, i_layout& aParent);
 	public:
+		cell_coordinate rows() const;
+		cell_coordinate columns() const;
+		cell_coordinates dimensions() const;
 		void set_dimensions(cell_coordinate aRows, cell_coordinate aColumns);
-		virtual void add_widget(i_widget& aWidget);
-		virtual void add_widget(std::shared_ptr<i_widget> aWidget);
-		virtual void add_layout(i_layout& aLayout);
-		virtual void add_layout(std::shared_ptr<i_layout> aLayout);
-		virtual void add_widget(cell_coordinate aRow, cell_coordinate aColumn, i_widget& aWidget);
-		virtual void add_widget(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_widget> aWidget);
-		virtual void add_layout(cell_coordinate aRow, cell_coordinate aColumn, i_layout& aLayout);
-		virtual void add_layout(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_layout> aLayout);
-		using layout::add_spacer;
+		virtual void add_item(i_widget& aWidget);
+		virtual void add_item(std::shared_ptr<i_widget> aWidget);
+		virtual void add_item(i_layout& aLayout);
+		virtual void add_item(std::shared_ptr<i_layout> aLayout);
+		virtual void add_item(cell_coordinate aRow, cell_coordinate aColumn, i_widget& aWidget);
+		virtual void add_item(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_widget> aWidget);
+		virtual void add_item(cell_coordinate aRow, cell_coordinate aColumn, i_layout& aLayout);
+		virtual void add_item(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_layout> aLayout);
+		virtual void add_item(cell_coordinate aRow, cell_coordinate aColumn, i_spacer& aSpacer);
+		virtual void add_item(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_spacer> aSpacer);
+		using layout::add_item;
 		virtual i_spacer& add_spacer();
 		virtual i_spacer& add_spacer(uint32_t aPosition);
 		virtual i_spacer& add_spacer(cell_coordinate aRow, cell_coordinate aColumn);
-		virtual void add_spacer(cell_coordinate aRow, cell_coordinate aColumn, i_spacer& aSpacer);
-		virtual void add_spacer(cell_coordinate aRow, cell_coordinate aColumn, std::shared_ptr<i_spacer> aSpacer);
+		virtual void remove_item(std::size_t aIndex);
+		virtual void remove_item(cell_coordinate aRow, cell_coordinate aColumn);
+		virtual void remove_items();
 		using layout::get_widget;
 		i_widget& get_widget(cell_coordinate aRow, cell_coordinate aColumn);
 		template <typename WidgetT>
@@ -65,20 +78,32 @@ namespace neogfx
 		using layout::get_layout;
 		i_layout& get_layout(cell_coordinate aRow, cell_coordinate aColumn);
 	public:
-		virtual size minimum_size() const;
-		virtual size maximum_size() const;
+		virtual size minimum_size(const optional_size& aAvailableSpace = optional_size()) const;
+		virtual size maximum_size(const optional_size& aAvailableSpace = optional_size()) const;
+	public:
+		virtual void set_spacing(const size& aSpacing);
+		void add_span(cell_coordinate aRowFrom, cell_coordinate aColumnFrom, uint32_t aRows, uint32_t aColumns);
+		void add_span(const cell_coordinates& aFrom, const cell_coordinates& aTo);
+	public:
 		virtual void layout_items(const point& aPosition, const size& aSize);
 	private:
 		uint32_t visible_rows() const;
+		bool is_row_visible(uint32_t aRow) const;
 		uint32_t visible_columns() const;
-		size::dimension_type row_minimum_size(cell_coordinate aRow) const;
-		size::dimension_type column_minimum_size(cell_coordinate aColumn) const;
-		size::dimension_type row_maximum_size(cell_coordinate aRow) const;
-		size::dimension_type column_maximum_size(cell_coordinate aColumn) const;
+		bool is_column_visible(uint32_t aColumn) const;
+		size::dimension_type row_minimum_size(cell_coordinate aRow, const optional_size& aAvailableSpace = optional_size()) const;
+		size::dimension_type column_minimum_size(cell_coordinate aColumn, const optional_size& aAvailableSpace = optional_size()) const;
+		size::dimension_type row_maximum_size(cell_coordinate aRow, const optional_size& aAvailableSpace = optional_size()) const;
+		size::dimension_type column_maximum_size(cell_coordinate aColumn, const optional_size& aAvailableSpace = optional_size()) const;
 		void increment_cursor();
+		horizontal_layout& row_layout(cell_coordinate aRow);
+		span_list::const_iterator find_span(const cell_coordinates& aCell) const;
 	private:
+		vertical_layout iRowLayout;
+		std::vector<std::shared_ptr<horizontal_layout>> iRows;
 		cell_list iCells;
-		cell_coordinates iDimensions;
+		cell_dimensions iDimensions;
 		cell_coordinates iCursor;
+		span_list iSpans;
 	};
 }

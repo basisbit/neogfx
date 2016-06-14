@@ -19,129 +19,223 @@
 
 #include "neogfx.hpp"
 #include <boost/format.hpp>
+#include <neolib/string_utils.hpp>
+#include <neolib/raii.hpp>
 #include "window.hpp"
 #include "app.hpp"
 #include "i_native_window.hpp"
 #include "i_layout.hpp"
 
+#include "opengl_error.hpp"
+
 namespace neogfx
 {
-	window::window(const video_mode& aVideoMode, uint32_t aStyle) :
-		scrollable_widget(false),
+	window::window(const video_mode& aVideoMode, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
 		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aVideoMode, app::instance().name(), aStyle)), 
 		iStyle(aStyle), 
 		iUnits(UnitsPixels), 
 		iCountedEnable(0), 
-		iClosing(false), 
+		iNativeWindowClosing(false), 
+		iClosed(false),
 		iEnteredWidget(0), 
 		iCapturingWidget(0),
-		iFocusedWidget(0)
+		iFocusedWidget(0),
+		iDismissingChildren(false)
 	{
 		init();
 	}
 
-	window::window(const video_mode& aVideoMode, const std::string& aWindowTitle, uint32_t aStyle) :
-		scrollable_widget(false),
+	window::window(const video_mode& aVideoMode, const std::string& aWindowTitle, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
 		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aVideoMode, aWindowTitle, aStyle)), 
 		iStyle(aStyle), 
 		iUnits(UnitsPixels), 
 		iCountedEnable(0), 
-		iClosing(false), 
-		iEnteredWidget(0), 
+		iNativeWindowClosing(false), 
+		iClosed(false),
+		iEnteredWidget(0),
 		iCapturingWidget(0),
-		iFocusedWidget(0)
+		iFocusedWidget(0),
+		iDismissingChildren(false)
 	{
 		init();
 	}
 
-	window::window(dimension aWidth, dimension aHeight, uint32_t aStyle) :
-		scrollable_widget(false),
-		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, video_mode(static_cast<uint32_t>(aWidth), static_cast<uint32_t>(aHeight)), app::instance().name(), aStyle)), 
-		iStyle(aStyle), 
-		iUnits(UnitsPixels), 
-		iCountedEnable(0), 
-		iClosing(false), 
-		iEnteredWidget(0), 
+	window::window(const size& aDimensions, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
+		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aDimensions, app::instance().name(), aStyle)),
+		iStyle(aStyle),
+		iUnits(UnitsPixels),
+		iCountedEnable(0),
+		iNativeWindowClosing(false),
+		iClosed(false),
+		iEnteredWidget(0),
 		iCapturingWidget(0),
-		iFocusedWidget(0)
+		iFocusedWidget(0),
+		iDismissingChildren(false)
 	{
 		init();
 	}
 
-	window::window(dimension aWidth, dimension aHeight, const std::string& aWindowTitle, uint32_t aStyle) :
-		scrollable_widget(false),
-		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, video_mode(static_cast<uint32_t>(aWidth), static_cast<uint32_t>(aHeight)), aWindowTitle, aStyle)), 
-		iStyle(aStyle), 
-		iUnits(UnitsPixels), 
-		iCountedEnable(0), 
-		iClosing(false), 
-		iEnteredWidget(0), 
+	window::window(const size& aDimensions, const std::string& aWindowTitle, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
+		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aDimensions, aWindowTitle, aStyle)),
+		iStyle(aStyle),
+		iUnits(UnitsPixels),
+		iCountedEnable(0),
+		iNativeWindowClosing(false),
+		iClosed(false),
+		iEnteredWidget(0),
 		iCapturingWidget(0),
-		iFocusedWidget(0)
+		iFocusedWidget(0),
+		iDismissingChildren(false)
 	{
 		init();
 	}
 
-	window::window(window& aParent, const video_mode& aVideoMode, uint32_t aStyle) :
-		scrollable_widget(static_cast<i_widget&>(aParent), false),
-		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, *aParent.iNativeWindow, aVideoMode, app::instance().name(), aStyle)), 
-		iStyle(aStyle), 
-		iUnits(UnitsPixels), 
-		iCountedEnable(0), 
-		iClosing(false), 
-		iEnteredWidget(0), 
+	window::window(const point& aPosition, const size& aDimensions, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
+		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aPosition, aDimensions, app::instance().name(), aStyle)),
+		iStyle(aStyle),
+		iUnits(UnitsPixels),
+		iCountedEnable(0),
+		iNativeWindowClosing(false),
+		iClosed(false),
+		iEnteredWidget(0),
 		iCapturingWidget(0),
-		iFocusedWidget(0)
+		iFocusedWidget(0),
+		iDismissingChildren(false)
 	{
 		init();
 	}
 
-	window::window(window& aParent, const video_mode& aVideoMode, const std::string& aWindowTitle, uint32_t aStyle) :
-		scrollable_widget(static_cast<i_widget&>(aParent), false),
-		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, *aParent.iNativeWindow, aVideoMode, aWindowTitle, aStyle)), 
-		iStyle(aStyle), 
-		iUnits(UnitsPixels), 
-		iCountedEnable(0), 
-		iClosing(false), 
-		iEnteredWidget(0), 
+	window::window(const point& aPosition, const size& aDimensions, const std::string& aWindowTitle, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
+		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aPosition, aDimensions, aWindowTitle, aStyle)),
+		iStyle(aStyle),
+		iUnits(UnitsPixels),
+		iCountedEnable(0),
+		iNativeWindowClosing(false),
+		iClosed(false),
+		iEnteredWidget(0),
 		iCapturingWidget(0),
-		iFocusedWidget(0)
+		iFocusedWidget(0),
+		iDismissingChildren(false)
 	{
 		init();
 	}
 
-	window::window(window& aParent, dimension aWidth, dimension aHeight, uint32_t aStyle) :
-		scrollable_widget(static_cast<i_widget&>(aParent), false),
-		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, *aParent.iNativeWindow, video_mode(static_cast<uint32_t>(aWidth), static_cast<uint32_t>(aHeight)), app::instance().name(), aStyle)), 
+	window::window(i_widget& aParent, const video_mode& aVideoMode, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
+		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aParent.surface().native_surface(), aVideoMode, app::instance().name(), aStyle)),
 		iStyle(aStyle), 
 		iUnits(UnitsPixels), 
 		iCountedEnable(0), 
-		iClosing(false), 
-		iEnteredWidget(0), 
+		iNativeWindowClosing(false), 
+		iClosed(false),
+		iEnteredWidget(0),
 		iCapturingWidget(0),
-		iFocusedWidget(0)
+		iFocusedWidget(0),
+		iDismissingChildren(false)
 	{
+		set_parent(aParent.ultimate_ancestor());
 		init();
 	}
 
-	window::window(window& aParent, dimension aWidth, dimension aHeight, const std::string& aWindowTitle, uint32_t aStyle) :
-		scrollable_widget(static_cast<i_widget&>(aParent), false),
-		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, *aParent.iNativeWindow, video_mode(static_cast<uint32_t>(aWidth), static_cast<uint32_t>(aHeight)), aWindowTitle, aStyle)), 
+	window::window(i_widget& aParent, const video_mode& aVideoMode, const std::string& aWindowTitle, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
+		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aParent.surface().native_surface(), aVideoMode, aWindowTitle, aStyle)),
 		iStyle(aStyle), 
 		iUnits(UnitsPixels), 
 		iCountedEnable(0), 
-		iClosing(false), 
-		iEnteredWidget(0), 
+		iNativeWindowClosing(false), 
+		iClosed(false),
+		iEnteredWidget(0),
 		iCapturingWidget(0),
-		iFocusedWidget(0)
+		iFocusedWidget(0),
+		iDismissingChildren(false)
 	{
+		set_parent(aParent.ultimate_ancestor());
+		init();
+	}
+
+	window::window(i_widget& aParent, const size& aDimensions, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
+		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aParent.surface().native_surface(), aDimensions, app::instance().name(), aStyle)),
+		iStyle(aStyle),
+		iUnits(UnitsPixels),
+		iCountedEnable(0),
+		iNativeWindowClosing(false),
+		iClosed(false),
+		iEnteredWidget(0),
+		iCapturingWidget(0),
+		iFocusedWidget(0),
+		iDismissingChildren(false)
+	{
+		set_parent(aParent.ultimate_ancestor());
+		init();
+	}
+
+	window::window(i_widget& aParent, const size& aDimensions, const std::string& aWindowTitle, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
+		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aParent.surface().native_surface(), aDimensions, aWindowTitle, aStyle)),
+		iStyle(aStyle),
+		iUnits(UnitsPixels),
+		iCountedEnable(0),
+		iNativeWindowClosing(false),
+		iClosed(false),
+		iEnteredWidget(0),
+		iCapturingWidget(0),
+		iFocusedWidget(0),
+		iDismissingChildren(false)
+	{
+		set_parent(aParent.ultimate_ancestor());
+		init();
+	}
+
+	window::window(i_widget& aParent, const point& aPosition, const size& aDimensions, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
+		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aParent.surface().native_surface(), aPosition, aDimensions, app::instance().name(), aStyle)),
+		iStyle(aStyle),
+		iUnits(UnitsPixels),
+		iCountedEnable(0),
+		iNativeWindowClosing(false),
+		iClosed(false),
+		iEnteredWidget(0),
+		iCapturingWidget(0),
+		iFocusedWidget(0),
+		iDismissingChildren(false)
+	{
+		set_parent(aParent.ultimate_ancestor());
+		init();
+	}
+
+	window::window(i_widget& aParent, const point& aPosition, const size& aDimensions, const std::string& aWindowTitle, style_e aStyle, i_scrollbar::style_e aScrollbarStyle, framed_widget::style_e aFrameStyle) :
+		scrollable_widget(aScrollbarStyle, aFrameStyle),
+		iNativeWindow(app::instance().rendering_engine().create_window(app::instance().surface_manager(), *this, aParent.surface().native_surface(), aPosition, aDimensions, aWindowTitle, aStyle)),
+		iStyle(aStyle),
+		iUnits(UnitsPixels),
+		iCountedEnable(0),
+		iNativeWindowClosing(false),
+		iClosed(false),
+		iEnteredWidget(0),
+		iCapturingWidget(0),
+		iFocusedWidget(0),
+		iDismissingChildren(false)
+	{
+		set_parent(aParent.ultimate_ancestor());
 		init();
 	}
 
 	window::~window()
 	{
-		if (iNativeWindow)
-			iNativeWindow->close();
+		close();
+	}
+
+	uint32_t window::style() const
+	{
+		return iStyle;
 	}
 
 	bool window::is_root() const
@@ -163,7 +257,6 @@ namespace neogfx
 	{
 		scrollable_widget::layout_items_completed();
 		i_widget& widgetUnderMouse = (iCapturingWidget == 0 ? widget_for_mouse_event(iNativeWindow->mouse_position()) : *iCapturingWidget);
-		i_widget* previousEnteredWidget = iEnteredWidget;
 		if (iEnteredWidget != &widgetUnderMouse)
 			native_window_mouse_entered();
 	}
@@ -205,6 +298,20 @@ namespace neogfx
 		return oldUnits;
 	}
 
+	void window::resized()
+	{
+		resize_surface(widget::extents());
+		scrollable_widget::resized();
+		update();
+	}
+
+	neogfx::size_policy window::size_policy() const
+	{
+		if (widget::has_size_policy())
+			return widget::size_policy();
+		return neogfx::size_policy::Manual;
+	}
+
 	colour window::background_colour() const
 	{
 		if (has_background_colour())
@@ -213,9 +320,93 @@ namespace neogfx
 			return container_background_colour();
 	}
 
-	window::surface_type_e window::surface_type() const
+	bool window::is_weak() const
 	{
-		return SurfaceTypeWindow;
+		return (style() & Weak) == Weak;
+	}
+
+	void window::close()
+	{
+		if (iClosed)
+			return;
+		if (!destroyed())
+			native_surface().activate_context();
+		if (has_layout())
+			layout().remove_items();
+		remove_widgets();
+		if (!destroyed())
+		{
+			native_surface().deactivate_context();
+			native_surface().close();
+		}
+		else
+			iNativeWindow.reset();
+		iClosed = true;
+		closed.trigger();
+	}
+
+	bool window::has_parent_surface() const
+	{
+		return has_parent();
+	}
+
+	const i_surface& window::parent_surface() const
+	{
+		return parent().surface();
+	}
+	
+	i_surface& window::parent_surface()
+	{
+		return parent().surface();
+	}
+
+	bool window::is_owner_of(const i_surface& aChildSurface) const
+	{
+		const i_surface* s = &aChildSurface;
+		if (s == this)
+			return false;
+		while (s->has_parent_surface())
+		{
+			s = &s->parent_surface();
+			if (s == this)
+				return true;
+		}
+		return false;
+	}
+
+	bool window::is_dismissing_children() const
+	{
+		return iDismissingChildren;
+	}
+
+	bool window::can_dismiss(const i_widget*) const
+	{
+		return true;
+	}
+
+	surface_type window::surface_type() const
+	{
+		return neogfx::surface_type::Window;
+	}
+
+	neogfx::logical_coordinate_system window::logical_coordinate_system() const
+	{
+		return native_surface().logical_coordinate_system();
+	}
+
+	void window::set_logical_coordinate_system(neogfx::logical_coordinate_system aSystem)
+	{
+		native_surface().set_logical_coordinate_system(aSystem);
+	}
+
+	const vector4& window::logical_coordinates() const
+	{
+		return native_surface().logical_coordinates();
+	}
+
+	void window::set_logical_coordinates(const vector4& aCoordinates)
+	{
+		native_surface().set_logical_coordinates(aCoordinates);
 	}
 
 	void window::layout_surface()
@@ -225,9 +416,14 @@ namespace neogfx
 
 	void window::invalidate_surface(const rect& aInvalidatedRect, bool aInternal)
 	{
-		iNativeWindow->invalidate_surface(aInvalidatedRect);
+		iNativeWindow->invalidate(aInvalidatedRect);
 		if (!aInternal)
 			update(aInvalidatedRect);
+	}
+
+	void window::render_surface()
+	{
+		iNativeWindow->render();
 	}
 	
 	graphics_context window::create_graphics_context() const
@@ -235,19 +431,24 @@ namespace neogfx
 		return graphics_context(static_cast<const i_widget&>(*this));
 	}
 
-	const i_native_surface& window::native_surface() const
+	graphics_context window::create_graphics_context(const i_widget& aWidget) const
+	{
+		return graphics_context(aWidget);
+	}
+
+	const i_native_window& window::native_surface() const
 	{
 		return *iNativeWindow;
 	}
 
-	i_native_surface& window::native_surface()
+	i_native_window& window::native_surface()
 	{
 		return *iNativeWindow;
 	}
 
 	bool window::destroyed() const
 	{
-		return !iNativeWindow;
+		return !iNativeWindow || native_surface().is_destroyed();
 	}
 
 	point window::surface_position() const
@@ -295,7 +496,7 @@ namespace neogfx
 		native_surface().restore_mouse_cursor();
 	}
 
-	void window::widget_added(i_widget& aWidget)
+	void window::widget_added(i_widget&)
 	{
 		layout_items(true);
 	}
@@ -309,6 +510,23 @@ namespace neogfx
 		if (iFocusedWidget == &aWidget)
 			iFocusedWidget = 0;
 		layout_items(true);
+	}
+
+	void window::show(bool aVisible)
+	{
+		widget::show(aVisible);
+		if (!destroyed())
+		{
+			if (aVisible)
+				native_surface().show();
+			else
+				native_surface().hide();
+		}
+	}
+
+	bool window::requires_owner_focus() const
+	{
+		return (iStyle & RequiresOwnerFocus) == RequiresOwnerFocus;
 	}
 
 	bool window::has_entered_widget() const
@@ -418,33 +636,38 @@ namespace neogfx
 
 	void window::init()
 	{
+		native_surface().rendering_finished([this]()
+		{
+			// For some reason textures aren't rendered on initial render so render again. FBO bug to fix?
+			if (native_surface().frame_counter() < 3)
+				invalidate_surface(rect{point{}, surface_size()}, false);
+		}, this);
 		app::instance().surface_manager().add_surface(*this);
 		update_modality();
 		scrollable_widget::init();
-		activate();
 	}
 
 	void window::native_window_closing()
 	{
-		if (!iClosing)
+		if (!iNativeWindowClosing)
 		{
-			iClosing = true;
+			iNativeWindowClosing = true;
 			update_modality();
 		}
-		if (has_parent())
+		if (has_parent() && !(static_cast<window&>(parent()).style() & window::NoActivate))
 			static_cast<window&>(parent()).activate();
 	}
 
 	void window::native_window_closed()
 	{
-		if (!iClosing)
+		if (!iNativeWindowClosing)
 		{
-			iClosing = true;
+			iNativeWindowClosing = true;
 			update_modality();
 		}
 		iNativeWindow.reset();
 		app::instance().surface_manager().remove_surface(*this);
-		if (has_parent())
+		if (has_parent() && !(static_cast<window&>(parent()).style() & window::NoActivate))
 			static_cast<window&>(parent()).activate();
 	}
 
@@ -454,6 +677,17 @@ namespace neogfx
 
 	void window::native_window_focus_lost()
 	{
+		for (std::size_t i = 0; i < app::instance().surface_manager().surface_count();)
+		{
+			auto& s = app::instance().surface_manager().surface(i);
+			if (is_owner_of(s) && s.requires_owner_focus())
+			{
+				s.close();
+				i = 0;
+			}
+			else
+				++i;
+		}
 	}
 
 	void window::native_window_resized()
@@ -461,7 +695,12 @@ namespace neogfx
 		resize(native_surface().surface_size());
 	}	
 
-	void window::native_window_render(const rect& aInvalidatedRect) const
+	bool window::native_window_ready_to_render() const
+	{
+		return ready_to_render();
+	}
+
+	void window::native_window_render(const rect&) const
 	{
 		graphics_context gc(surface());
 		gc.set_extents(extents());
@@ -469,23 +708,30 @@ namespace neogfx
 		render(gc);
 	}
 
+	void window::native_window_dismiss_children()
+	{
+		dismiss_children();
+	}
+
 	void window::native_window_mouse_wheel_scrolled(mouse_wheel aWheel, delta aDelta)
 	{
 		widget_for_mouse_event(iNativeWindow->mouse_position()).mouse_wheel_scrolled(aWheel, aDelta);
 	}
 
-	void window::native_window_mouse_button_pressed(mouse_button aButton, const point& aPosition)
+	void window::native_window_mouse_button_pressed(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers)
 	{
 		i_widget& w = widget_for_mouse_event(aPosition);
+		dismiss_children(&w);
 		update_click_focus(w);
-		w.mouse_button_pressed(aButton, aPosition - w.origin());
+		w.mouse_button_pressed(aButton, aPosition - w.origin(), aKeyModifiers);
 	}
 
-	void window::native_window_mouse_button_double_clicked(mouse_button aButton, const point& aPosition)
+	void window::native_window_mouse_button_double_clicked(mouse_button aButton, const point& aPosition, key_modifiers_e aKeyModifiers)
 	{
 		i_widget& w = widget_for_mouse_event(aPosition);
+		dismiss_children(&w);
 		update_click_focus(w);
-		w.mouse_button_double_clicked(aButton, aPosition - w.origin());
+		w.mouse_button_double_clicked(aButton, aPosition - w.origin(), aKeyModifiers);
 	}
 
 	void window::native_window_mouse_button_released(mouse_button aButton, const point& aPosition)
@@ -537,14 +783,14 @@ namespace neogfx
 			if ((aKeyModifiers & KeyModifier_SHIFT) == KeyModifier_NONE)
 			{
 				for (w = &w->link_after(); 
-					w != start && (w->hidden() || w->disabled() || (w->focus_policy() & focus_policy::TabFocus) != focus_policy::TabFocus); 
+					w != start && (w->effectively_hidden() || w->effectively_disabled() || (w->focus_policy() & focus_policy::TabFocus) != focus_policy::TabFocus); 
 					w = &w->link_after())
 					;
 			}
 			else
 			{
 				for (w = &w->link_before();
-					w != start && (w->hidden() || w->disabled() || (w->focus_policy() & focus_policy::TabFocus) != focus_policy::TabFocus);
+					w != start && (w->effectively_hidden() || w->effectively_disabled() || (w->focus_policy() & focus_policy::TabFocus) != focus_policy::TabFocus);
 					w = &w->link_before())
 					;
 			}
@@ -570,17 +816,47 @@ namespace neogfx
 
 	void window::native_window_text_input(const std::string& aText)
 	{
-		if (has_focused_widget())
-			focused_widget().text_input(aText);
+		auto utf32 = neolib::utf8_to_utf32(aText);
+		if (neolib::utf16::is_high_surrogate(utf32[0]))
+			iSurrogatePairPart = utf32[0];
+		else if (neolib::utf16::is_low_surrogate(utf32[0]) && iSurrogatePairPart != boost::none)
+		{
+			char16_t utf16[] = { static_cast<char16_t>(*iSurrogatePairPart), static_cast<char16_t>(neolib::utf8_to_utf32(aText)[0]) };
+			iSurrogatePairPart = boost::none;
+			auto text = neolib::utf16_to_utf8(std::u16string(&utf16[0], 2));
+			if (has_focused_widget())
+				focused_widget().text_input(text);
+			else
+				text_input(text);
+		}
 		else
-			text_input(aText);
+		{
+			if (has_focused_widget())
+				focused_widget().text_input(aText);
+			else
+				text_input(aText);
+		}
+	}
+
+	void window::native_window_sys_text_input(const std::string& aText)
+	{
+		if (has_focused_widget())
+			focused_widget().sys_text_input(aText);
+		else
+			sys_text_input(aText);
+	}
+
+	void window::native_window_set_default_mouse_cursor()
+	{
+		i_widget& widgetUnderMouse = (iCapturingWidget == 0 ? widget_for_mouse_event(iNativeWindow->mouse_position()) : *iCapturingWidget);
+		widgetUnderMouse.set_default_mouse_cursor();
 	}
 
 	void window::update_click_focus(i_widget& aCandidateWidget)
 	{
 		if (aCandidateWidget.enabled() && (aCandidateWidget.focus_policy() & focus_policy::ClickFocus) == focus_policy::ClickFocus)
 			aCandidateWidget.set_focus();
-		else if (aCandidateWidget.has_parent())
+		else if (aCandidateWidget.has_parent() && aCandidateWidget.parent().same_surface(*this))
 			update_click_focus(aCandidateWidget.parent());
 	}
 
@@ -589,13 +865,33 @@ namespace neogfx
 		for (std::size_t i = 0; i < app::instance().surface_manager().surface_count(); ++i)
 		{
 			i_surface& surface = app::instance().surface_manager().surface(i);
-			if (surface.surface_type() == i_surface::SurfaceTypeWindow && &surface != this)
+			if (surface.surface_type() == surface_type::Window && &surface != this)
 			{
 				window& windowSurface = static_cast<window&>(surface);
 				if (iStyle & ApplicationModal)
-					windowSurface.counted_enable(!iNativeWindow || iClosing);
-				else if ((iStyle & Modal) && windowSurface.is_ancestor(*this))
-					windowSurface.counted_enable(!iNativeWindow || iClosing);
+					windowSurface.counted_enable(!iNativeWindow || iNativeWindowClosing);
+				else if ((iStyle & Modal) && windowSurface.is_ancestor_of(*this, false))
+					windowSurface.counted_enable(!iNativeWindow || iNativeWindowClosing);
+			}
+		}
+	}
+
+	void window::dismiss_children(const i_widget* aClickedWidget)
+	{
+		dismissing_children.trigger(aClickedWidget);
+		neolib::scoped_flag sf(iDismissingChildren);
+		if ((style() & window::RequiresOwnerFocus) != window::RequiresOwnerFocus)
+		{
+			for (std::size_t i = 0; i < app::instance().surface_manager().surface_count();)
+			{
+				auto& s = app::instance().surface_manager().surface(i);
+				if (is_owner_of(s) && (s.style() & window::DismissOnOwnerClick) == window::DismissOnOwnerClick && s.can_dismiss(aClickedWidget))
+				{
+					s.close();
+					i = 0;
+				}
+				else
+					++i;
 			}
 		}
 	}

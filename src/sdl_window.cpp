@@ -18,15 +18,22 @@
 */
 
 #include "neogfx.hpp"
+#include <thread>
 #include <SDL.h>
 #include <SDL_syswm.h>
 #include <SDL_mouse.h>
+#include "opengl_error.hpp"
 #include "sdl_window.hpp"
+#include "app.hpp"
 
+#ifdef WIN32
+extern "C" BOOL WIN_ConvertUTF32toUTF8(UINT32 codepoint, char * text);
+extern "C" int SDL_SendKeyboardText(const char *text);
+#endif
 
 namespace neogfx
 {
-	Uint32 sdl_window::convert_style(uint32_t aStyle)
+	Uint32 sdl_window::convert_style(window::style_e aStyle)
 	{   
 		uint32_t result = 0u;
 		if (aStyle & window::None)
@@ -93,64 +100,240 @@ namespace neogfx
 		return result;
 	}
 
-	sdl_window::sdl_window(i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, const video_mode& aVideoMode, const std::string& aWindowTitle, uint32_t aStyle) :
+	std::map<void*, sdl_window*> sHandleMap;
+
+	sdl_window::sdl_window(i_basic_services&, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, const video_mode& aVideoMode, const std::string& aWindowTitle, window::style_e aStyle) :
 		opengl_window(aRenderingEngine, aSurfaceManager, aEventHandler),
-		iHandle(SDL_CreateWindow(
-			aWindowTitle.c_str(), 
-			SDL_WINDOWPOS_UNDEFINED, 
-			SDL_WINDOWPOS_UNDEFINED, 
-			aVideoMode.width(), 
-			aVideoMode.height(), 
-			SDL_WINDOW_OPENGL | convert_style(aStyle))),
-		iContext(NULL),
+		iParent(0),
+		iStyle(aStyle),
+		iHandle(0),
+		iNativeHandle(0),
+		iContext(0),
 		iProcessingEvent(false),
-		iCapturingMouse(false)
+		iCapturingMouse(false),
+		iDestroyed(false)
 	{
-		if (iHandle == NULL)
+		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+		iHandle = SDL_CreateWindow(
+			aWindowTitle.c_str(),
+			SDL_WINDOWPOS_UNDEFINED,
+			SDL_WINDOWPOS_UNDEFINED,
+			aVideoMode.width(),
+			aVideoMode.height(),
+			SDL_WINDOW_HIDDEN | SDL_WINDOW_OPENGL | convert_style(aStyle));
+		if (iHandle == 0)
 			throw failed_to_create_window(SDL_GetError());
-		iContext = SDL_GL_CreateContext(iHandle);
-		if (iContext == NULL)
+		init();
+		iContext = reinterpret_cast<SDL_GLContext>(aRenderingEngine.create_context(*this));
+		if (iContext == 0)
 		{
 			SDL_DestroyWindow(iHandle);
 			throw failed_to_create_opengl_context(SDL_GetError());
 		}
-#ifdef WIN32
-		SetClassLongPtr(static_cast<HWND>(native_handle()), GCL_STYLE, CS_DBLCLKS);
-#endif
+		int w, h;
+		SDL_GetWindowSize(iHandle, &w, &h);
+		iExtents = basic_size<int>{w, h};
+
+		do_activate_context();
+
+		if ((aStyle & window::InitiallyHidden) != window::InitiallyHidden)
+			show((aStyle & window::NoActivate) != window::NoActivate);
 	}
 
-	sdl_window::sdl_window(i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, sdl_window& aParent, const video_mode& aVideoMode, const std::string& aWindowTitle, uint32_t aStyle) :
+	sdl_window::sdl_window(i_basic_services&, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, const basic_size<int>& aDimensions, const std::string& aWindowTitle, window::style_e aStyle) :
 		opengl_window(aRenderingEngine, aSurfaceManager, aEventHandler),
-		iHandle(SDL_CreateWindow(
-			aWindowTitle.c_str(), 
-			SDL_WINDOWPOS_UNDEFINED, 
-			SDL_WINDOWPOS_UNDEFINED, 
-			aVideoMode.width(), 
-			aVideoMode.height(), 
-			SDL_WINDOW_OPENGL | convert_style(aStyle))),
-		iContext(NULL),
+		iParent(0),
+		iStyle(aStyle),
+		iHandle(0),
+		iNativeHandle(0),
+		iContext(0),
 		iProcessingEvent(false),
-		iCapturingMouse(false)
+		iCapturingMouse(false),
+		iDestroyed(false)
 	{
-		if (iHandle == NULL)
+		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+		iHandle = SDL_CreateWindow(
+			aWindowTitle.c_str(),
+			SDL_WINDOWPOS_CENTERED,
+			SDL_WINDOWPOS_CENTERED,
+			aDimensions.cx,
+			aDimensions.cy,
+			SDL_WINDOW_HIDDEN | SDL_WINDOW_OPENGL | convert_style(aStyle));
+		if (iHandle == 0)
 			throw failed_to_create_window(SDL_GetError());
-		iContext = SDL_GL_CreateContext(iHandle);
-		if (iContext == NULL)
+		init();
+		iContext = reinterpret_cast<SDL_GLContext>(aRenderingEngine.create_context(*this));
+		if (iContext == 0)
 		{
 			SDL_DestroyWindow(iHandle);
 			throw failed_to_create_opengl_context(SDL_GetError());
 		}
-#ifdef WIN32
-		SetClassLongPtr(static_cast<HWND>(native_handle()), GCL_STYLE, CS_DBLCLKS);
-		SetParent(static_cast<HWND>(native_handle()), static_cast<HWND>(aParent.native_handle()));
-#endif
+		int w, h;
+		SDL_GetWindowSize(iHandle, &w, &h);
+		iExtents = basic_size<int>{ w, h };
+
+		do_activate_context();
+
+		if ((aStyle & window::InitiallyHidden) != window::InitiallyHidden)
+			show((aStyle & window::NoActivate) != window::NoActivate);
+	}
+
+	sdl_window::sdl_window(i_basic_services&, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, const basic_point<int>& aPosition, const basic_size<int>& aDimensions, const std::string& aWindowTitle, window::style_e aStyle) :
+		opengl_window(aRenderingEngine, aSurfaceManager, aEventHandler),
+		iParent(0),
+		iStyle(aStyle),
+		iHandle(0),
+		iNativeHandle(0),
+		iContext(0),
+		iProcessingEvent(false),
+		iCapturingMouse(false),
+		iDestroyed(false)
+	{
+		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+		iHandle = SDL_CreateWindow(
+			aWindowTitle.c_str(),
+			aPosition.x,
+			aPosition.y,
+			aDimensions.cx,
+			aDimensions.cy,
+			SDL_WINDOW_HIDDEN | SDL_WINDOW_OPENGL | convert_style(aStyle));
+		if (iHandle == 0)
+			throw failed_to_create_window(SDL_GetError());
+		init();
+		iContext = reinterpret_cast<SDL_GLContext>(aRenderingEngine.create_context(*this));
+		if (iContext == 0)
+		{
+			SDL_DestroyWindow(iHandle);
+			throw failed_to_create_opengl_context(SDL_GetError());
+		}
+		int w, h;
+		SDL_GetWindowSize(iHandle, &w, &h);
+		iExtents = basic_size<int>{ w, h };
+
+		do_activate_context();
+
+		if ((aStyle & window::InitiallyHidden) != window::InitiallyHidden)
+			show((aStyle & window::NoActivate) != window::NoActivate);
+	}
+
+	sdl_window::sdl_window(i_basic_services&, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, sdl_window& aParent, const video_mode& aVideoMode, const std::string& aWindowTitle, window::style_e aStyle) :
+		opengl_window(aRenderingEngine, aSurfaceManager, aEventHandler),
+		iParent(&aParent),
+		iStyle(aStyle),
+		iHandle(0),
+		iNativeHandle(0),
+		iContext(0),
+		iProcessingEvent(false),
+		iCapturingMouse(false),
+		iDestroyed(false)
+	{
+		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+		iHandle = SDL_CreateWindow(
+			aWindowTitle.c_str(),
+			SDL_WINDOWPOS_UNDEFINED,
+			SDL_WINDOWPOS_UNDEFINED,
+			aVideoMode.width(),
+			aVideoMode.height(),
+			SDL_WINDOW_HIDDEN | SDL_WINDOW_OPENGL | convert_style(aStyle));
+		if (iHandle == 0)
+			throw failed_to_create_window(SDL_GetError());
+		init();
+		iContext = reinterpret_cast<SDL_GLContext>(aRenderingEngine.create_context(*this));
+		if (iContext == 0)
+		{
+			SDL_DestroyWindow(iHandle);
+			throw failed_to_create_opengl_context(SDL_GetError());
+		}
+		int w, h;
+		SDL_GetWindowSize(iHandle, &w, &h);
+		iExtents = basic_size<int>{ w, h };
+
+		do_activate_context();
+
+		if ((aStyle & window::InitiallyHidden) != window::InitiallyHidden)
+			show((aStyle & window::NoActivate) != window::NoActivate);
+	}
+
+	sdl_window::sdl_window(i_basic_services&, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, sdl_window& aParent, const basic_size<int>& aDimensions, const std::string& aWindowTitle, window::style_e aStyle) :
+		opengl_window(aRenderingEngine, aSurfaceManager, aEventHandler),
+		iParent(&aParent),
+		iStyle(aStyle),
+		iHandle(0),
+		iNativeHandle(0),
+		iContext(0),
+		iProcessingEvent(false),
+		iCapturingMouse(false),
+		iDestroyed(false)
+	{
+		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+		iHandle = SDL_CreateWindow(
+			aWindowTitle.c_str(),
+			SDL_WINDOWPOS_CENTERED,
+			SDL_WINDOWPOS_CENTERED,
+			aDimensions.cx,
+			aDimensions.cy,
+			SDL_WINDOW_HIDDEN | SDL_WINDOW_OPENGL | convert_style(aStyle));
+		if (iHandle == 0)
+			throw failed_to_create_window(SDL_GetError());
+		init();
+		iContext = reinterpret_cast<SDL_GLContext>(aRenderingEngine.create_context(*this));
+		if (iContext == 0)
+		{
+			SDL_DestroyWindow(iHandle);
+			throw failed_to_create_opengl_context(SDL_GetError());
+		}
+		int w, h;
+		SDL_GetWindowSize(iHandle, &w, &h);
+		iExtents = basic_size<int>{ w, h };
+
+		do_activate_context();
+
+		if ((aStyle & window::InitiallyHidden) != window::InitiallyHidden)
+			show((aStyle & window::NoActivate) != window::NoActivate);
+	}
+
+	sdl_window::sdl_window(i_basic_services&, i_rendering_engine& aRenderingEngine, i_surface_manager& aSurfaceManager, i_native_window_event_handler& aEventHandler, sdl_window& aParent, const basic_point<int>& aPosition, const basic_size<int>& aDimensions, const std::string& aWindowTitle, window::style_e aStyle) :
+		opengl_window(aRenderingEngine, aSurfaceManager, aEventHandler),
+		iParent(&aParent),
+		iStyle(aStyle),
+		iHandle(0),
+		iNativeHandle(0),
+		iContext(0),
+		iProcessingEvent(false),
+		iCapturingMouse(false),
+		iDestroyed(false)
+	{
+		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+		iHandle = SDL_CreateWindow(
+			aWindowTitle.c_str(),
+			aPosition.x,
+			aPosition.y,
+			aDimensions.cx,
+			aDimensions.cy,
+			SDL_WINDOW_HIDDEN | SDL_WINDOW_OPENGL | convert_style(aStyle));
+		if (iHandle == 0)
+			throw failed_to_create_window(SDL_GetError());
+		init();
+		iContext = reinterpret_cast<SDL_GLContext>(aRenderingEngine.create_context(*this));
+		if (iContext == 0)
+		{
+			SDL_DestroyWindow(iHandle);
+			throw failed_to_create_opengl_context(SDL_GetError());
+		}
+		int w, h;
+		SDL_GetWindowSize(iHandle, &w, &h);
+		iExtents = basic_size<int>{ w, h };
+
+		do_activate_context();
+
+		if ((aStyle & window::InitiallyHidden) != window::InitiallyHidden)
+			show((aStyle & window::NoActivate) != window::NoActivate);
 	}
 
 	sdl_window::~sdl_window()
 	{
-		release_capture();
-		SDL_GL_DeleteContext(iContext);
-		SDL_DestroyWindow(iHandle);
+		close();
+		rendering_engine().destroy_context(*this);
 	}
 
 	void* sdl_window::handle() const
@@ -160,18 +343,25 @@ namespace neogfx
 
 	void* sdl_window::native_handle() const
 	{
-		SDL_SysWMinfo info;
-		SDL_VERSION(&info.version);
-		if (SDL_GetWindowWMInfo(iHandle, &info))
+		if (iNativeHandle == 0 && !iDestroyed)
 		{
+			SDL_SysWMinfo info;
+			SDL_VERSION(&info.version);
+			if (SDL_GetWindowWMInfo(iHandle, &info))
+			{
 #if defined(SDL_VIDEO_DRIVER_WINDOWS)
-			return info.info.win.window;
-#else
-			return 0;
+				iNativeHandle = info.info.win.window;
 #endif
+			}
+			else
+				throw failed_to_get_window_information(SDL_GetError());
 		}
-		else
-			throw failed_to_get_window_information(SDL_GetError());
+		return iNativeHandle;
+	}
+
+	void* sdl_window::native_context() const
+	{
+		return iContext;
 	}
 
 	point sdl_window::surface_position() const
@@ -188,14 +378,16 @@ namespace neogfx
 
 	size sdl_window::surface_size() const
 	{
-		int w, h;
-		SDL_GetWindowSize(iHandle, &w, &h);
-		return size(static_cast<dimension>(w), static_cast<dimension>(h));
+		return iExtents;
 	}
 
 	void sdl_window::resize_surface(const size& aSize)
 	{
-		SDL_SetWindowSize(iHandle, static_cast<int>(aSize.cx), static_cast<int>(aSize.cy));
+		if (iExtents != aSize)
+		{
+			SDL_SetWindowSize(iHandle, static_cast<int>(aSize.cx), static_cast<int>(aSize.cy));
+			iExtents = aSize;
+		}
 	}
 
 	point sdl_window::mouse_position() const
@@ -203,7 +395,7 @@ namespace neogfx
 		int x, y;
 		SDL_Window* mouseFocus = SDL_GetMouseFocus();
 		SDL_GetMouseState(&x, &y);
-		if (mouseFocus != NULL)
+		if (mouseFocus != 0)
 		{
 			int mfx, mfy;
 			SDL_GetWindowPosition(mouseFocus, &mfx, &mfy);
@@ -218,7 +410,7 @@ namespace neogfx
 
 	bool sdl_window::is_mouse_button_pressed(mouse_button aButton) const
 	{
-		return (aButton & convert_mouse_button(SDL_GetMouseState(NULL, NULL))) != mouse_button::None;
+		return (aButton & convert_mouse_button(SDL_GetMouseState(0, 0))) != mouse_button::None;
 	}
 
 	void sdl_window::save_mouse_cursor()
@@ -279,6 +471,8 @@ namespace neogfx
 		iCurrentCursor = iSavedCursors.back();
 		iSavedCursors.pop_back();
 		SDL_SetCursor(&*iCurrentCursor);
+		if (iSavedCursors.empty())
+			event_handler().native_window_set_default_mouse_cursor();
 	}
 
 	std::unique_ptr<i_native_graphics_context> sdl_window::create_graphics_context() const
@@ -286,10 +480,45 @@ namespace neogfx
 		return std::unique_ptr<i_native_graphics_context>(new sdl_graphics_context(rendering_engine(), *this));
 	}
 
+	std::unique_ptr<i_native_graphics_context> sdl_window::create_graphics_context(const i_widget& aWidget) const
+	{
+		return std::unique_ptr<i_native_graphics_context>(new sdl_graphics_context(rendering_engine(), *this, aWidget));
+	}
+
 	void sdl_window::close()
 	{
-		SDL_DestroyWindow(iHandle);
-		iHandle = NULL;
+		if (iHandle != 0)
+		{
+			release_capture();
+			event_handler().native_window_closing();
+			if (!iDestroyed)
+			{
+#ifdef WIN32
+				DestroyWindow(static_cast<HWND>(native_handle()));
+#endif
+				SDL_DestroyWindow(iHandle);
+			}
+			iHandle = 0;
+			event_handler().native_window_closed();
+		}
+	}
+
+	void sdl_window::show(bool aActivate)
+	{
+#ifdef WIN32
+		ShowWindow(static_cast<HWND>(native_handle()), aActivate ? SW_SHOW : SW_SHOWNA);
+#else
+		SDL_ShowWindow(iHandle);
+#endif
+	}
+
+	void sdl_window::hide()
+	{
+#ifdef WIN32
+		ShowWindow(static_cast<HWND>(native_handle()), SW_HIDE);
+#else
+		SDL_HideWindow(iHandle);
+#endif
 	}
 
 	bool sdl_window::is_active() const
@@ -300,6 +529,9 @@ namespace neogfx
 	void sdl_window::activate()
 	{
 		SDL_RaiseWindow(iHandle);
+#ifdef WIN32
+		SetWindowPos(static_cast<HWND>(native_handle()), 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+#endif
 	}
 
 	void sdl_window::enable(bool aEnable)
@@ -313,11 +545,11 @@ namespace neogfx
 	{
 		if (!iCapturingMouse)
 		{
-			iCapturingMouse = true;
+			iCapturingMouse = true; 
+			SDL_CaptureMouse(SDL_TRUE);
 #ifdef WIN32
 			SetCapture(static_cast<HWND>(native_handle()));
 #endif
-			SDL_CaptureMouse(SDL_TRUE);
 		}
 	}
 
@@ -333,23 +565,149 @@ namespace neogfx
 		}
 	}
 
+	bool sdl_window::is_destroyed() const
+	{
+		return iDestroyed;
+	}
+
+	void sdl_window::activate_context() const
+	{
+		if (context_activation_stack().empty() || context_activation_stack().back() != this)
+			do_activate_context();
+		context_activation_stack().push_back(this);
+	}
+
+	void sdl_window::deactivate_context() const
+	{
+		if (context_activation_stack().empty() || context_activation_stack().back() != this)
+			throw context_mismatch();
+		context_activation_stack().pop_back();
+		if (context_activation_stack().empty())
+		{
+			if (!iDestroyed)
+				do_activate_context();
+			else
+				do_activate_default_context();
+		}
+		else if (context_activation_stack().back() != this)
+			context_activation_stack().back()->do_activate_context();
+	}
+
+#ifdef WIN32
+	LRESULT CALLBACK sdl_window::CustomWindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+	{
+		auto mapEntry = sHandleMap.find(sHandleMap[hwnd]->iNativeHandle);
+		auto wndproc = mapEntry->second->iSDLWindowProc;
+		LRESULT result;
+		switch(msg)
+		{
+		case WM_SYSCHAR:
+			result = CallWindowProc(wndproc, hwnd, msg, wparam, lparam);
+			{
+				std::string buffer;
+				buffer.resize(5);
+				if (WIN_ConvertUTF32toUTF8((UINT32)wparam, &buffer[0]))
+				{
+					std::string text = buffer.c_str();
+					if (!app::instance().keyboard().grabber().sys_text_input(text))
+					{
+						mapEntry->second->event_handler().native_window_sys_text_input(text);
+					}
+				}
+			}
+			break;
+		case WM_LBUTTONDOWN:
+		case WM_RBUTTONDOWN:
+		case WM_MBUTTONDOWN:
+		case WM_XBUTTONDOWN:
+		case WM_LBUTTONDBLCLK:
+		case WM_RBUTTONDBLCLK:
+		case WM_MBUTTONDBLCLK:
+		case WM_XBUTTONDBLCLK:
+		{
+				key_modifiers_e modifiers = KeyModifier_NONE;
+				if (wparam & MK_SHIFT)
+					modifiers = static_cast<key_modifiers_e>(modifiers | KeyModifier_SHIFT);
+				if (wparam & MK_CONTROL)
+					modifiers = static_cast<key_modifiers_e>(modifiers | KeyModifier_CTRL);
+				mapEntry->second->push_mouse_button_event_extra_info(modifiers);
+				result = CallWindowProc(wndproc, hwnd, msg, wparam, lparam);
+			}
+			break;
+		case WM_NCLBUTTONDOWN:
+		case WM_NCRBUTTONDOWN:
+		case WM_NCMBUTTONDOWN:
+			mapEntry->second->event_handler().native_window_dismiss_children(); // call this before default wndproc (which enters its own NC drag message loop)
+			result = CallWindowProc(wndproc, hwnd, msg, wparam, lparam);
+			break;
+		case WM_DESTROY:
+			{
+				mapEntry->second->destroying();
+				result = CallWindowProc(wndproc, hwnd, msg, wparam, lparam);
+			}
+			break;
+		case WM_NCDESTROY:
+			{
+				mapEntry->second->destroyed();
+				sHandleMap.erase(mapEntry);
+				result = CallWindowProc(wndproc, hwnd, msg, wparam, lparam);
+			}
+			break;
+		case WM_MOUSEACTIVATE:
+			if (GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE)
+				result = MA_NOACTIVATE;
+			else
+				result = CallWindowProc(wndproc, hwnd, msg, wparam, lparam);
+			break;
+		default:
+			result = CallWindowProc(wndproc, hwnd, msg, wparam, lparam);
+			break;
+		}
+		return result;
+	}
+#endif
+
+	void sdl_window::init()
+	{
+		sHandleMap[native_handle()] = this;
+#ifdef WIN32
+		iSDLWindowProc = (WNDPROC)SetWindowLongPtr(static_cast<HWND>(native_handle()), GWLP_WNDPROC, (LONG_PTR)&CustomWindowProc);
+		DWORD existingStyle = GetWindowLongPtr(static_cast<HWND>(native_handle()), GWL_STYLE);
+		DWORD newStyle = existingStyle;
+		if (iStyle & window::None)
+			newStyle |= WS_POPUP;
+		if ((iStyle & window::MinimizeBox) != window::MinimizeBox)
+			newStyle &= ~WS_MINIMIZEBOX;
+		if ((iStyle & window::MaximizeBox) != window::MaximizeBox)
+			newStyle &= ~WS_MAXIMIZEBOX;
+		if (newStyle != existingStyle)
+			SetWindowLongPtr(static_cast<HWND>(native_handle()), GWL_STYLE, newStyle);
+		if (iStyle & window::NoActivate)
+			SetWindowLongPtr(static_cast<HWND>(native_handle()), GWL_EXSTYLE, GetWindowLongPtr(static_cast<HWND>(native_handle()), GWL_EXSTYLE) | WS_EX_NOACTIVATE | WS_EX_TOPMOST);
+		if (iParent != 0)
+			SetWindowLongPtr(static_cast<HWND>(native_handle()), GWL_HWNDPARENT, reinterpret_cast<LONG>(iParent->native_handle()));
+		SetWindowPos(static_cast<HWND>(native_handle()), 0, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_HIDEWINDOW);
+#endif
+	}
+
 	void sdl_window::process_event(const SDL_Event& aEvent)
 	{
 		iProcessingEvent = true;
-		bool renderNow = false;
 		switch (aEvent.type)
 		{
 		case SDL_WINDOWEVENT:
 			switch (aEvent.window.event)
 			{
 			case SDL_WINDOWEVENT_CLOSE:
-				event_handler().native_window_closing();
 				close();
-				event_handler().native_window_closed();
 				break;
 			case SDL_WINDOWEVENT_RESIZED:
+				iExtents = basic_size<decltype(aEvent.window.data1)>{ aEvent.window.data1, aEvent.window.data2 };
 				event_handler().native_window_resized();
-				renderNow = true;
+				break;
+			case SDL_WINDOWEVENT_SIZE_CHANGED:
+				iExtents = basic_size<decltype(aEvent.window.data1)>{ aEvent.window.data1, aEvent.window.data2 };
+				event_handler().native_window_resized();
 				break;
 			case SDL_WINDOWEVENT_ENTER:
 				event_handler().native_window_mouse_entered();
@@ -373,9 +731,17 @@ namespace neogfx
 			break;
 		case SDL_MOUSEBUTTONDOWN:
 			if (aEvent.button.clicks == 1)
-				event_handler().native_window_mouse_button_pressed(convert_mouse_button(aEvent.button.button), point(static_cast<coordinate>(aEvent.button.x), static_cast<coordinate>(aEvent.button.y)));
+				event_handler().native_window_mouse_button_pressed(
+					convert_mouse_button(aEvent.button.button),
+					point{static_cast<coordinate>(aEvent.button.x), static_cast<coordinate>(aEvent.button.y)},
+					iMouseButtonEventExtraInfo.front());
+				
 			else
-				event_handler().native_window_mouse_button_double_clicked(convert_mouse_button(aEvent.button.button), point(static_cast<coordinate>(aEvent.button.x), static_cast<coordinate>(aEvent.button.y)));
+				event_handler().native_window_mouse_button_double_clicked(
+					convert_mouse_button(aEvent.button.button), 
+					point{static_cast<coordinate>(aEvent.button.x), static_cast<coordinate>(aEvent.button.y)},
+					iMouseButtonEventExtraInfo.front());
+			iMouseButtonEventExtraInfo.pop_front();
 			break;
 		case SDL_MOUSEBUTTONUP:
 			event_handler().native_window_mouse_button_released(convert_mouse_button(aEvent.button.button), point(static_cast<coordinate>(aEvent.button.x), static_cast<coordinate>(aEvent.button.y)));
@@ -399,21 +765,60 @@ namespace neogfx
 			break;
 		}
 		iProcessingEvent = false;
-		if (renderNow)
-			render();
 	}
 
-	void sdl_window::activate_context()
+	void sdl_window::destroying()
+	{
+		opengl_window::destroying();
+	}
+		
+	void sdl_window::destroyed()
+	{
+		if (!iDestroyed)
+		{
+			iDestroyed = true;
+			opengl_window::destroyed();
+			iNativeHandle = 0;
+		}
+		bool activateDefaultContext = true;
+		while (!context_activation_stack().empty() && context_activation_stack().back() == this)
+		{
+			activateDefaultContext = false;
+			deactivate_context();
+		}
+		if (activateDefaultContext)
+			do_activate_default_context();
+	}
+
+	void sdl_window::do_activate_context() const
 	{
 		if (SDL_GL_MakeCurrent(iHandle, iContext) != 0)
 			throw failed_to_activate_opengl_context(SDL_GetError());
+		glCheck("");
 	}
 
-	void sdl_window::deactivate_context()	
+	void sdl_window::do_activate_default_context() const
 	{
-		/* nothing to do */
+		for (std::size_t i = 0; i != surface_manager().surface_count(); ++i)
+			if (!surface_manager().surface(i).destroyed())
+			{
+				surface_manager().surface(i).native_surface().activate_context();
+				context_activation_stack().pop_back();
+				break;
+			}
 	}
-	
+
+	void sdl_window::push_mouse_button_event_extra_info(key_modifiers_e aKeyModifiers)
+	{
+		iMouseButtonEventExtraInfo.push_back(aKeyModifiers);
+	}
+
+	std::deque<const sdl_window*>& sdl_window::context_activation_stack()
+	{
+		static std::deque<const sdl_window*> sStack;
+		return sStack;
+	}
+
 	void sdl_window::display()
 	{
 		SDL_GL_SwapWindow(iHandle);

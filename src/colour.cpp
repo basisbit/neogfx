@@ -17,12 +17,15 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "neogfx.hpp"
+#include <tuple>
+#include <iomanip>
 #include <neolib/string_utils.hpp>
 #include "colour.hpp"
 
 namespace neogfx
 {
-	colour::colour() : iValue(Black.value())
+	colour::colour() : iValue{}
 	{
 	}
 
@@ -38,7 +41,7 @@ namespace neogfx
 	{
 	}
 
-	colour::colour(const text& aTextValue) : iValue()
+	colour::colour(const std::string& aTextValue) : iValue()
 	{
 		if (aTextValue[0] == L'#')
 		{
@@ -75,29 +78,63 @@ namespace neogfx
 		return (iValue >> BlueShift) & 0xFF; 
 	}
 
-	void colour::set_alpha(component aNewValue) 
+	colour& colour::set_alpha(component aNewValue)
 	{ 
 		*this = colour(red(), green(), blue(), aNewValue); 
+		return *this;
 	}
 
-	void colour::set_red(component aNewValue) 
+	colour& colour::set_red(component aNewValue)
 	{ 
 		*this = colour(aNewValue, green(), blue(), alpha()); 
+		return *this;
 	}
 
-	void colour::set_green(component aNewValue) 
+	colour& colour::set_green(component aNewValue)
 	{ 
 		*this = colour(red(), aNewValue, blue(), alpha()); 
+		return *this;
 	}
 
-	void colour::set_blue(component aNewValue) 
+	colour& colour::set_blue(component aNewValue)
 	{ 
 		*this = colour(red(), green(), aNewValue, alpha()); 
+		return *this;
+	}
+
+	colour colour::with_alpha(component aNewValue) const
+	{
+		return colour(red(), green(), blue(), aNewValue);
+	}
+
+	colour colour::with_red(component aNewValue) const
+	{
+		return colour(aNewValue, green(), blue(), alpha());
+	}
+
+	colour colour::with_green(component aNewValue) const
+	{
+		return colour(red(), aNewValue, blue(), alpha());
+	}
+
+	colour colour::with_blue(component aNewValue) const
+	{
+		return colour(red(), green(), aNewValue, alpha());
+	}
+
+	colour colour::with_combined_alpha(component aNewValue) const
+	{
+		return colour(red(), green(), blue(), static_cast<component>((alpha() / 255.0 * aNewValue / 255.0) * 255));
 	}
 
 	hsl_colour colour::to_hsl() const
 	{
 		return hsl_colour(*this);
+	}
+
+	hsv_colour colour::to_hsv() const
+	{
+		return hsv_colour(*this);
 	}
 
 	double colour::intensity() const
@@ -214,11 +251,31 @@ namespace neogfx
 		return iValue != aOther.iValue; 
 	}
 
+	bool colour::operator<(const colour& aOther) const
+	{
+		hsv_colour left = to_hsv();
+		hsv_colour right = aOther.to_hsv();
+		return std::make_tuple(left.hue(), left.saturation(), left.value()) < std::make_tuple(right.hue(), right.saturation(), right.value());
+	}
+
+	std::string colour::to_string() const
+	{
+		std::ostringstream result;
+		result << "rgba(" << static_cast<int>(red()) << ", " << static_cast<int>(green()) << ", " << static_cast<int>(blue()) << ", " << alpha() / 255.0 << ");";
+		return result.str();
+	}
 
 	gradient::gradient(const colour& aFrom, const colour& aTo, direction_e aDirection) : 
 		iFrom(aFrom), 
 		iTo(aTo), 
 		iDirection(aDirection) 
+	{
+	}
+
+	gradient::gradient(const colour& aFromTo, direction_e aDirection) :
+		iFrom(aFromTo),
+		iTo(aFromTo),
+		iDirection(aDirection)
 	{
 	}
 
@@ -248,12 +305,65 @@ namespace neogfx
 
 	colour gradient::at(double aPos) const
 	{
+		if (aPos < 0.0 || aPos > 1.0)
+			throw bad_position();
 		return at(static_cast<coordinate>(aPos * colour::MaxComponetValue), 0, colour::MaxComponetValue);
 	}
 
-	gradient::direction_e gradient::direction() const 
+	const colour& gradient::from() const
+	{
+		return iFrom;
+	}
+
+	colour& gradient::from()
+	{
+		return iFrom;
+	}
+
+	const colour& gradient::to() const
+	{
+		return iTo;
+	}
+
+	colour& gradient::to()
+	{
+		return iTo;
+	}
+
+	gradient gradient::with_alpha(colour::component aAlpha) const
+	{
+		gradient result = *this;
+		result.from() = result.from().with_alpha(aAlpha);
+		result.to() = result.to().with_alpha(aAlpha);
+		return result;
+	}
+
+	gradient gradient::with_combined_alpha(colour::component aAlpha) const
+	{
+		gradient result = *this;
+		result.from() = result.from().with_combined_alpha(aAlpha);
+		result.to() = result.to().with_combined_alpha(aAlpha);
+		return result;
+	}
+
+	gradient::direction_e gradient::direction() const
 	{ 
 		return iDirection; 
+	}
+
+	bool gradient::operator==(const gradient& aOther) const
+	{
+		return iFrom == aOther.iFrom && iTo == aOther.iTo && iDirection == aOther.iDirection;
+	}
+
+	bool gradient::operator!=(const gradient& aOther) const
+	{
+		return !(*this == aOther);
+	}
+
+	bool gradient::operator<(const gradient& aOther) const
+	{
+		return std::tie(iFrom, iTo, iDirection) < std::tie(aOther.iFrom, aOther.iTo, aOther.iDirection);
 	}
 
 	const colour colour::AliceBlue = colour(0xF0, 0xF8, 0xFF);
@@ -915,11 +1025,11 @@ namespace neogfx
 	const colour colour::Yellow4 = colour(0x8B, 0x8B, 0x00);
 	const colour colour::YellowGreen = colour(0x9A, 0xCD, 0x32);
 
-	colour colour::from_name(const text& aName)
+	colour colour::from_name(const std::string& aName)
 	{
-		struct named_colours : public std::map<ci_text, colour>
+		struct named_colours : public std::map<neolib::ci_string, colour>
 		{
-			named_colours() : std::map<ci_text, colour>
+			named_colours() : std::map<neolib::ci_string, colour>
 			({
 				{ "alice blue", AliceBlue },
 				{ "AliceBlue", AliceBlue },

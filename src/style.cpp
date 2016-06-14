@@ -67,7 +67,10 @@ namespace neogfx
 		{
 			iMargins = aMargins;
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().layout_surfaces();
+			}
 		}
 	}
 
@@ -82,7 +85,10 @@ namespace neogfx
 		{
 			iSpacing = aSpacing;
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().layout_surfaces();
+			}
 		}
 	}
 
@@ -104,7 +110,10 @@ namespace neogfx
 		{
 			iColour = aColour;
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().invalidate_surfaces();
+			}
 		}
 	}
 
@@ -127,7 +136,10 @@ namespace neogfx
 		{
 			iBackgroundColour = aBackgroundColour;
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().invalidate_surfaces();
+			}
 		}
 	}
 
@@ -150,7 +162,10 @@ namespace neogfx
 		{
 			iForegroundColour = aForegroundColour;
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().invalidate_surfaces();
+			}
 		}
 	}
 
@@ -173,7 +188,10 @@ namespace neogfx
 		{
 			iTextColour = aTextColour;
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().invalidate_surfaces();
+			}
 		}
 	}
 
@@ -196,7 +214,10 @@ namespace neogfx
 		{
 			iSelectionColour = aSelectionColour;
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().invalidate_surfaces();
+			}
 		}
 	}
 
@@ -219,7 +240,10 @@ namespace neogfx
 		{
 			iHoverColour = aHoverColour;
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().invalidate_surfaces();
+			}
 		}
 	}
 
@@ -233,7 +257,7 @@ namespace neogfx
 		if (has_widget_detail_primary_colour())
 			return *iWidgetDetailPrimaryColour;
 		else
-			return colour().light() ? neogfx::colour::LawnGreen.darker(0x40) : neogfx::colour::LawnGreen.lighter(0x40);
+			return colour().same_lightness_as(colour().light() ? neogfx::colour{32, 32, 32} : neogfx::colour{224, 224, 224});
 	}
 
 	void style::set_widget_detail_primary_colour(const optional_colour& aWidgetDetailPrimaryColour)
@@ -242,7 +266,10 @@ namespace neogfx
 		{
 			iWidgetDetailPrimaryColour = aWidgetDetailPrimaryColour;
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().invalidate_surfaces();
+			}
 		}
 	}
 
@@ -256,7 +283,7 @@ namespace neogfx
 		if (has_widget_detail_secondary_colour())
 			return *iWidgetDetailSecondaryColour;
 		else
-			return neogfx::colour::Goldenrod;
+			return colour().same_lightness_as(colour().light() ? neogfx::colour{ 64, 64, 64 } : neogfx::colour{ 192, 192, 192 });
 	}
 
 	void style::set_widget_detail_secondary_colour(const optional_colour& aWidgetDetailSecondaryColour)
@@ -265,7 +292,10 @@ namespace neogfx
 		{
 			iWidgetDetailSecondaryColour = aWidgetDetailSecondaryColour;
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().invalidate_surfaces();
+			}
 		}
 	}
 
@@ -281,7 +311,10 @@ namespace neogfx
 			iFontInfo = aFontInfo;
 			iFont.reset();
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().layout_surfaces();
+			}
 		}
 	}
 
@@ -289,7 +322,7 @@ namespace neogfx
 	{
 		if (iFont == boost::none)
 		{
-			iFont = neogfx::font();
+			iFont = neogfx::font(iFontInfo);
 		}
 		return *iFont;
 	}
@@ -306,7 +339,10 @@ namespace neogfx
 			iFallbackFontInfo = aFontInfo;
 			iFallbackFont.reset();
 			if (&app::instance().current_style() == this)
+			{
+				app::instance().current_style_changed.trigger();
 				app::instance().surface_manager().layout_surfaces();
+			}
 		}
 	}
 
